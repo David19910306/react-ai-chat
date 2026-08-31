@@ -1,11 +1,9 @@
-import express, { type Request, type Response } from "express"
+import express from "express";
+import { addUser, loginUser } from "../controller/use.controller";
 
-const useRouter = express.Router()
+const router = express.Router();
 
-useRouter.get('/user', (req: Request, res: Response) => {
-  res.setHeader('Content-Type', 'application/json; charset=utf-8')
-  res.write('我是测试路由');
-  res.end();
-});
+router.post('/api/add/user', addUser);
+router.post('/api/login/user', loginUser);
 
-export { useRouter }
+export default router;
