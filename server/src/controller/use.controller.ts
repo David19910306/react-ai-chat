@@ -27,6 +27,7 @@ async function loginUser(req: Request, res: Response, next: NextFunction) {
   );
   const _user = { userId, username, password: encrypted(password), token, };
   res.status(200).json({ user: _user });
+  next();
 }
 
 export {

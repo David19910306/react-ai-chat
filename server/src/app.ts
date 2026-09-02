@@ -4,7 +4,7 @@
 import express, { type Express, } from "express";
 import cors from 'cors';
 import helmet from "helmet";
-import { useRouter } from "./router";
+import { sseRouter, useRouter } from "./router";
 import validateAccessToken from "./middleware/token.middleware";
 
 const app: Express = express();
@@ -17,5 +17,6 @@ app.use(helmet());
 app.use(validateAccessToken); // token验证
 
 app.use(useRouter);
+app.use(sseRouter);
 
 export default app;

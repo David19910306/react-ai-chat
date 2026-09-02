@@ -3,10 +3,10 @@
 import mysql from 'mysql2/promise';
 import { configDotenv } from "dotenv";
 
-const HOST = configDotenv().parsed?.HOST ?? 'localhost';
-const USER = configDotenv().parsed?.USER ?? 'root';
-const PASS_WORD = configDotenv().parsed?.PASS_WORD ?? '123456';
-const DATA_BASE = configDotenv().parsed?.DATA_BASE ?? 'database';
+const HOST = configDotenv({ path: '.env.development' }).parsed?.HOST ?? 'localhost';
+const USER = configDotenv({ path: '.env.development' }).parsed?.USER ?? 'root';
+const PASS_WORD = configDotenv({ path: '.env.development' }).parsed?.PASS_WORD ?? '123456';
+const DATA_BASE = configDotenv({ path: '.env.development' }).parsed?.DATA_BASE ?? 'database';
 
 const connection = mysql.createPool({
   host: HOST,
