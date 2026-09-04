@@ -20,7 +20,7 @@ function validateAccessToken(req: Request, res: Response, next: NextFunction) {
   // 验证token是否有效
   try {
     const _token = jsonwebtoken.verify(token, JWT_SECRET);
-    console.log(_token);
+    // console.log(_token);
     next();
   } catch (error: any) {
     if (error.name === 'TokenExpiredError') {

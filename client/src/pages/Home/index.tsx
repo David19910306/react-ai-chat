@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from 'antd';
 import { ListClockIcon, LoaderCircleIcon, PlusIcon, SendHorizonalIcon } from 'lucide-react';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -14,22 +14,23 @@ export default function Home () {
   const [loading, setLoading] = useState(false);
   const [value, setValue] = useState('');
 
-  const onSend = () => {
-    console.log(value.trim(), useFetchSSE, 'value');
+  const { messages, error, loading: sseLoading, connect, disconnect } = useFetchSSE({
+    url: '/api/sse/chat',
+    method: 'POST',
+    body: JSON.stringify({ messages: value.trim() }),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NTAxNTYxMDQ0MTI3MTkxMTgyIiwidXNlcm5hbWUiOiJkYWl5aTIiLCJpYXQiOjE3ODg1MTE1MjUsImV4cCI6MTc4ODUxODcyNX0.smz4f6S0A-3L--flN1XmcEEswASVxi5A7kCOgEO14s8',
+    }
+  });
 
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const { messages, error, loading: sseLoading } = useFetchSSE({
-      url: '/api/sse/chat',
-      method: 'POST',
-      body: JSON.stringify({ message: value.trim() }),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NTAxNTYxMDQ0MTI3MTkxMTgyIiwidXNlcm5hbWUiOiJkYWl5aTIiLCJpYXQiOjE3ODg1MTE1MjUsImV4cCI6MTc4ODUxODcyNX0.smz4f6S0A-3L--flN1XmcEEswASVxi5A7kCOgEO14s8',
-      }
-    });
+  const onSend = () => {
     setLoading(sseLoading);
+    connect();
     console.log(messages, error, sseLoading, 'messages');
   }
+
+  useEffect(() => () => disconnect(), []);
 
   return (
     <div className='chat-container'>

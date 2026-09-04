@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 type SSEOptions = {
   url: string;
@@ -15,7 +15,7 @@ const useFetchSSE = (options: SSEOptions) => {
   const [loading, setLoading] = useState(true);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
+  const connect = useCallback(() => {
     const run = async () => {
       const abortColler = new AbortController();
       abortControllerRef.current = abortColler;
@@ -60,12 +60,17 @@ const useFetchSSE = (options: SSEOptions) => {
       }
     }
 
-    if (!body) return; // 如果没有body，则不执行SSE请求
     run();
-    return () => abortControllerRef.current?.abort();
   }, [url, method, body, headers]);
 
-  return { messages, error, loading };
+  const disconnect = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }, [abortControllerRef]);
+
+  return { messages, error, loading, connect, disconnect };
 }
 
 export default useFetchSSE;

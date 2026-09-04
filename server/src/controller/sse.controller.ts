@@ -8,7 +8,7 @@ const openai = new OpenAI({
 
 async function sseHandler(req: Request, res: Response) {
   const { messages } = req.body;
-  if (!messages || !Array.isArray(messages)) {
+  if (!messages) {
     res.status(400).json({ error: 'Invalid request body' });
     return;
   }
