@@ -1,8 +1,11 @@
+import { useRef, useState } from 'react';
 import { Button } from 'antd';
 import { ListClockIcon, LoaderCircleIcon, PlusIcon, SendHorizonalIcon } from 'lucide-react';
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-expect-error
+import useFetchSSE from '@/hooks/useSSE';
 
 import './index.less';
-import { useRef, useState } from 'react';
 
 export default function Home () {
   const textareRef = useRef<HTMLTextAreaElement>(null);
@@ -10,6 +13,23 @@ export default function Home () {
   const [isFocused, setIsFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [value, setValue] = useState('');
+
+  const onSend = () => {
+    console.log(value.trim(), useFetchSSE, 'value');
+
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const { messages, error, loading: sseLoading } = useFetchSSE({
+      url: '/api/sse/chat',
+      method: 'POST',
+      body: JSON.stringify({ message: value.trim() }),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NTAxNTYxMDQ0MTI3MTkxMTgyIiwidXNlcm5hbWUiOiJkYWl5aTIiLCJpYXQiOjE3ODg1MTE1MjUsImV4cCI6MTc4ODUxODcyNX0.smz4f6S0A-3L--flN1XmcEEswASVxi5A7kCOgEO14s8',
+      }
+    });
+    setLoading(sseLoading);
+    console.log(messages, error, sseLoading, 'messages');
+  }
 
   return (
     <div className='chat-container'>
@@ -74,7 +94,7 @@ export default function Home () {
                 type="primary"
                 size="small"
                 icon={loading ? <LoaderCircleIcon size={18} /> : <SendHorizonalIcon size={18} />}
-                // onClick={onSend}
+                onClick={onSend}
                 disabled={
                   loading
                 }
