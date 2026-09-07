@@ -20,11 +20,6 @@ async function sseHandler(req: Request, res: Response) {
 
   const abortControl = new AbortController();
 
-  // 监听客户断开
-  req.on('close', () => {
-    if (!res.writableEnded) abortControl.abort();
-  });
-
   try{
     const stream = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL ?? 'deepseek-chat',
@@ -37,6 +32,10 @@ async function sseHandler(req: Request, res: Response) {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     }
     res.write('data: [DONE]\n\n');
+    // 客户端断开
+    req.on('close', () => { // 监听close事件
+      abortControl.abort()
+    });
   }catch (err: any) {
     const error = JSON.stringify({error: err.message });
     res.write(`event: ${error}, someting wrong\n\n`);

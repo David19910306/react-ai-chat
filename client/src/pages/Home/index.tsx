@@ -1,33 +1,66 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button } from 'antd';
+import { Button, notification } from 'antd';
 import { ListClockIcon, LoaderCircleIcon, PlusIcon, SendHorizonalIcon } from 'lucide-react';
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-expect-error
 import useFetchSSE from '@/hooks/useSSE';
 
 import './index.less';
+import ReactMarkdown from 'react-markdown';
 
 export default function Home () {
+  let _messages = "";
   const textareRef = useRef<HTMLTextAreaElement>(null);
   const [currentBtn, setCurrentBtn] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [loading, setLoading] = useState(false);
   const [value, setValue] = useState('');
+  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
 
-  const { messages, error, loading: sseLoading, connect, disconnect } = useFetchSSE({
+  const { connect, disconnect } = useFetchSSE({
     url: '/api/sse/chat',
     method: 'POST',
-    body: JSON.stringify({ messages: value.trim() }),
+    body: JSON.stringify({ messages: [ { role: 'user', content: value.trim() } ] }),
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NTAxNTYxMDQ0MTI3MTkxMTgyIiwidXNlcm5hbWUiOiJkYWl5aTIiLCJpYXQiOjE3ODg1MTE1MjUsImV4cCI6MTc4ODUxODcyNX0.smz4f6S0A-3L--flN1XmcEEswASVxi5A7kCOgEO14s8',
+      'Authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3NTAyNjI4Njc1NTY2MDY4MDU3IiwidXNlcm5hbWUiOiJkYWl5aSIsImlhdCI6MTc4ODc2NjA2OCwiZXhwIjoxNzg4NzczMjY4fQ.Lcnec9UhhlDe76xd1eorq2ECCeRhW_RKH0qEJgskDqQ',
     }
   });
 
   const onSend = () => {
-    setLoading(sseLoading);
-    connect();
-    console.log(messages, error, sseLoading, 'messages');
+    if (!value.trim()) {
+      textareRef.current?.focus();
+      notification.warning({
+        message: '请输入内容'
+      });
+      return;
+    }
+    const userMsg: { role: string; content: string } = { role: "user", content: value.trim() };
+    const inputMessage = [...messages, userMsg];
+    setMessages(inputMessage);
+
+    setLoading(true);
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+
+    connect(
+      (responses: string) => {
+        _messages += responses;
+        setMessages((prev) => {
+          const copy = [...prev];
+          copy[copy.length - 1] = { role: "assistant", content: _messages };
+          return copy;
+        });
+        setLoading(false);
+        setValue('');
+      },
+      (error: Error) => {
+        setLoading(false);
+        notification.error({
+          message: '请求错误',
+          description: error.message,
+        });
+      }
+    );
   }
 
   useEffect(() => () => disconnect(), []);
@@ -56,7 +89,25 @@ export default function Home () {
       <section className='h-full flex-1 flex flex-col bg-panel transition-colors pb-4'>
         <div className="relative flex-1 overflow-y-auto">
           <div className="w-[80%] mx-auto p-4 space-y-4">
-            展示区域
+            {messages.map((message, index) => (
+              message.role === 'assistant' ? (
+                <div key={index} className="flex items-start text-start">
+                  <div className="shrink-0 w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold mr-3">
+                    {message.role === 'assistant' ? 'AI' : 'You'}
+                  </div>
+                  <div className="flex-1">
+                    <ReactMarkdown>{message.content}</ReactMarkdown>
+                  </div>
+                </div>
+              ): (
+                // 用户输入消息
+                <div className="flex justify-end" key={index}>
+                  <div className="bg-(--user-bubble-bg) text-(--user-bubble-text) px-4 py-2 rounded-l-2xl rounded-tr-2xl rounded-br-sm wrap-break-word whitespace-pre-wrap transition-colors">
+                    {message.content}
+                  </div>
+                </div>
+              )
+            ))}
           </div>
         </div>
         <div

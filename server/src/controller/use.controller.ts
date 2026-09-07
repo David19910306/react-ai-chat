@@ -23,7 +23,7 @@ async function loginUser(req: Request, res: Response, next: NextFunction) {
   const token = jsonwebtoken.sign(
     { userId, username, },
     JWT_SECRET,
-    { expiresIn: '2h' }
+    { expiresIn: '5h' }
   );
   const _user = { userId, username, password: encrypted(password), token, };
   res.status(200).json({ user: _user });
