@@ -1,51 +1,35 @@
-// 加解密
-import { configDotenv } from 'dotenv';
+/**
+ * 密码哈希工具
+ * 使用 node:crypto 的 scrypt 慢哈希 + 随机盐，结果不可逆，抗离线暴力破解。
+ * 存储格式: scrypt$N$r$p$saltBase64$hashBase64
+ */
 import crypto from 'node:crypto';
 
-const AES_KEY = configDotenv({ path: '.env.development' }).parsed?.AES_KEY ?? '';
+const SCRYPT_N = 16384;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
 
-// 加密
-export function encrypted (pwd: string): string {
-  const iv = crypto.randomBytes(12);
-  const key = Buffer.from(AES_KEY, 'hex');
+// 哈希密码，返回带盐的可校验字符串
+export function hashPassword(password: string): string {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(password, salt, 32, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P });
+  return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString('base64')}$${hash.toString('base64')}`;
+}
 
-  // 加个防御校验，配置写错立刻报错而不是加密时才炸
-  if (key.length !== 32) {
-    throw new Error(`AES_KEY 长度错误：期望 32 字节，实际 ${key.length} 字节`);
+// 校验密码是否匹配存储的哈希
+export function verifyPassword(password: string, stored: string): boolean {
+  try {
+    const [scheme, n, r, p, saltB64, hashB64] = stored.split('$');
+    if (scheme !== 'scrypt' || !saltB64 || !hashB64) return false;
+
+    const salt = Buffer.from(saltB64, 'base64');
+    const expected = Buffer.from(hashB64, 'base64');
+    const actual = crypto.scryptSync(password, salt, expected.length, {
+      N: Number(n), r: Number(r), p: Number(p),
+    });
+    // 恒定时间比较，防时序攻击
+    return crypto.timingSafeEqual(actual, expected);
+  } catch {
+    return false;
   }
-
-  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-  const encrypted = Buffer.concat([
-    cipher.update(pwd, 'utf8'),
-    cipher.final(),
-  ]);
-  const authTag = cipher.getAuthTag(); // 用于校验数据是否被篡改
-  return Buffer.concat([iv, authTag, encrypted]).toString('base64');
-}
-
-// 解密
-export function decrypted(hashPwd: string) {
-  const buf = Buffer.from(hashPwd, 'base64');
-  const iv = buf.subarray(0, 12);
-  const authTag = buf.subarray(12, 28);
-  const encrypted = buf.subarray(28);
-  const key = Buffer.from(AES_KEY, 'hex');
-
-  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-  decipher.setAuthTag(authTag);
-  const decrypted = Buffer.concat([
-    decipher.update(encrypted),
-    decipher.final(),                         // 校验失败这里会抛错
-  ]);
-  return decrypted.toString('utf8');
-}
-
-/**
- * 目前是直接密码比较，后续要改成比较哈希值(涉及到注册时的逻辑，以及salt的存表)
- * @param target 
- * @param source 
- */
-export function comparePwdHash(hashPwd: string, sourcePwd: string) {
-  const pwd = decrypted(hashPwd);
-  return pwd === sourcePwd;
 }

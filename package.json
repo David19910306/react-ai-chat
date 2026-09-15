@@ -1,13 +1,14 @@
 {
   "name": "react-ai-chat",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev:client": "pnpm --dir client dev",
+    "dev:server": "pnpm --dir server dev",
+    "dev": "pnpm --dir client dev & pnpm --dir server dev",
+    "build": "pnpm --dir client build",
+    "typecheck": "pnpm --dir server typecheck",
+    "lint": "pnpm --dir client lint"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "packageManager": "pnpm@10.11.0"
 }

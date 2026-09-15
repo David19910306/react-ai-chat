@@ -1,1 +1,11 @@
 **/node_modules
+dist/
+build/
+
+# 环境变量文件一律不入库（含历史已泄露的 .env.development，已停止跟踪）
+**/.env
+**/.env.*
+!**/.env.example
+
+*.log
+.DS_Store

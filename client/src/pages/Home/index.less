@@ -6,23 +6,32 @@
     width: 15%;
     height: 100%;
     border-right: 1px solid #e7e8e9;
+    display: flex;
+    flex-direction: column;
     h1{
       color: #29b8b7;
       font-size: 48px;
       font-family: Cambria, Cochin, Georgia, Times, 'Times New Roman', serif;
       margin-bottom: 32px;
+      flex-shrink: 0;
     }
     .chat-menu-item{
       margin: 5px auto;
       height: 40px;
       width: 85%;
       border-radius: 8px;
+      flex-shrink: 0;
     }
     .history-chats{
       width: 85%;
       margin: 0 auto;
       margin-top: 56px;
       border-top: 1px solid #e7e8e9;
+    }
+    // 退出登录常驻侧边栏底部
+    .chat-logout-item{
+      margin-top: auto;
+      margin-bottom: 16px;
     }
   }
   .chat-content{

@@ -8,6 +8,11 @@
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 
+    /* 路径别名：与 vite.config.ts 的 alias 保持一致（TS6 起无需 baseUrl） */
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
     /* Bundler mode */
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,

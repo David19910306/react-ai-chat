@@ -1,18 +1,11 @@
-// 数据库初始化
-
+// 数据库连接池（全局共享，禁止在单次请求后 end()）
 import mysql from 'mysql2/promise';
-import { configDotenv } from "dotenv";
-
-const HOST = configDotenv({ path: '.env.development' }).parsed?.HOST ?? 'localhost';
-const USER = configDotenv({ path: '.env.development' }).parsed?.USER ?? 'root';
-const PASS_WORD = configDotenv({ path: '.env.development' }).parsed?.PASS_WORD ?? '123456';
-const DATA_BASE = configDotenv({ path: '.env.development' }).parsed?.DATA_BASE ?? 'database';
 
 const connection = mysql.createPool({
-  host: HOST,
-  user: USER,
-  password: PASS_WORD,
-  database: DATA_BASE,
+  host: process.env.DB_HOST ?? 'localhost',
+  user: process.env.DB_USER ?? 'root',
+  password: process.env.DB_PASSWORD ?? '123456',
+  database: process.env.DB_NAME ?? 'database',
   waitForConnections: true,
   connectionLimit: 10,
 })
