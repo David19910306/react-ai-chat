@@ -5,6 +5,20 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>client</title>
+    <script>
+      // 在首屏渲染前就把 data-theme 落到 <html> 上，否则会先按系统偏好画一帧再跳回用户选择。
+      // 逻辑与 src/hooks/useTheme.ts 的 readStoredMode 保持一致，改一处记得同步另一处
+      (function () {
+        try {
+          var mode = localStorage.getItem('chat-theme');
+          if (mode === 'dark' || mode === 'light') {
+            document.documentElement.setAttribute('data-theme', mode);
+          }
+        } catch (e) {
+          // localStorage 不可用时退回跟随系统，无需处理
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

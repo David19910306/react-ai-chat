@@ -7,7 +7,7 @@ import { type Request, type Response } from "express";
 import { Snowflake } from "@theinternetfolks/snowflake";
 import jsonwebtoken from "jsonwebtoken";
 
-import connection from "./initialDb.service";
+import connection from "./dbPool.service";
 import { hashPassword, verifyPassword } from "../utils";
 
 const JWT_SECRET = process.env.JWT_SECRET ?? '';

@@ -20,9 +20,13 @@ function validateAccessToken(req: Request, res: Response, next: NextFunction) {
   }
 
   const token = authHeader.split(' ')[1];
-  // 验证token是否有效
+  // 验证token是否有效，并通过 req.user 把当前登录用户透给后续 controller
   try {
-    jsonwebtoken.verify(token, JWT_SECRET);
+    const payload = jsonwebtoken.verify(token, JWT_SECRET) as jsonwebtoken.JwtPayload;
+    req.user = {
+      userId: String(payload.userId ?? ''),
+      username: String(payload.username ?? ''),
+    };
     next();
   } catch (error: any) {
     if (error.name === 'TokenExpiredError') {

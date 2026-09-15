@@ -7,8 +7,10 @@ type SSEOptions = {
 }
 
 type ConnectCallbacks = {
-  /** 收到一个 data 事件（已解析的 JSON） */
+  /** 收到一个无名 data 事件（已解析的 JSON） */
   onChunk?: (data: unknown) => void;
+  /** 收到一个具名事件，如 `event: conversation` */
+  onEvent?: (name: string, data: unknown) => void;
   /** 流正常结束（收到 [DONE] 或读取完毕），只触发一次 */
   onDone?: () => void;
   /** 出错：HTTP 非 2xx、服务端 error 事件、网络异常 */
@@ -20,7 +22,7 @@ const useFetchSSE = (options: SSEOptions) => {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const connect = useCallback((body?: BodyInit, callbacks?: ConnectCallbacks) => {
-    const { onChunk, onDone, onError } = callbacks ?? {};
+    const { onChunk, onEvent, onDone, onError } = callbacks ?? {};
 
     const controller = new AbortController();
     // 上一次连接若还在进行中，先断开
@@ -61,28 +63,36 @@ const useFetchSSE = (options: SSEOptions) => {
           for (const chunk of chunks) {
             if (!chunk.trim()) continue;
 
-            // 服务端 error 事件（event: error）
+            // 一个事件块形如 "event: xxx\ndata: {...}"，event 行可省略
             const eventMatch = chunk.match(/^event:\s*(\S+)/m);
-            if (eventMatch && eventMatch[1] === 'error') {
-              const dataMatch = chunk.match(/^data:\s*(.*)$/ms);
-              let message = 'SSE 服务端错误';
-              if (dataMatch) {
-                try { message = JSON.parse(dataMatch[1]).error ?? message; } catch { /* ignore */ }
-              }
-              throw new Error(message);
-            }
+            const eventName = eventMatch?.[1];
 
-            // 普通 data 事件
             const dataMatch = chunk.match(/^data:\s*(.*)$/ms);
             if (!dataMatch) continue;
             const payload = dataMatch[1];
+
+            // 服务端 error 事件（event: error）统一走 onError
+            if (eventName === 'error') {
+              let message = 'SSE 服务端错误';
+              try { message = JSON.parse(payload).error ?? message; } catch { /* ignore */ }
+              throw new Error(message);
+            }
+            
             if (payload === '[DONE]') {
               onDone?.();
               return;
             }
+
+            let parsed: unknown;
             try {
-              onChunk?.(JSON.parse(payload));
-            } catch { /* 忽略无法解析的数据 */ }
+              parsed = JSON.parse(payload);
+            } catch {
+              continue; // 忽略无法解析的数据
+            }
+
+            // 具名事件交给 onEvent，无名事件保持原有的 onChunk 行为
+            if (eventName) onEvent?.(eventName, parsed);
+            else onChunk?.(parsed);
           }
         }
         onDone?.();

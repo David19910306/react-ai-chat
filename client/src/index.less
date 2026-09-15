@@ -15,6 +15,20 @@
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
+  /* 聊天界面语义化色板：亮色为默认值，暗色在下方 .dark-vars() 中覆盖同名变量。
+     Less 里直接 var() 引用，JSX 里用 Tailwind 的 bg-(--token) 缩写引用，两套样式体系取同一份色值 */
+  --brand: #29b8b7;          /* 品牌色：logo、用户头像 */
+  --primary: #3b82f6;        /* 主色：发送按钮、AI 头像、用户气泡 */
+  --online: #22c55e;         /* 在线状态点 */
+  --sidebar-bg: #fafafa;     /* 侧边栏背景，比聊天区略深形成层次 */
+  --surface-bg: #ffffff;     /* 输入框等浮起表面 */
+  --surface-border: #e5e7eb;
+  --focus-border: #3b82f6;
+  --hover-bg: #f3f4f6;
+  --active-bg: #eff6ff;
+  --active-text: #2563eb;
+  --text-muted: #9ca3af;
+
   --user-bubble-bg: #3b82f6; /* blue-500 */
   --user-bubble-text: #ffffff;
 
@@ -33,19 +47,39 @@
   }
 }
 
+/* 暗色变量集合。抽成 mixin 是为了让两个入口共用同一份色板：
+   跟随系统时由媒体查询触发，手动切换时由 :root[data-theme='dark'] 触发。
+   带括号定义，不调用就不产出任何 CSS */
+.dark-vars() {
+  --text: #9ca3af;
+  --text-h: #f3f4f6;
+  --bg: #16171d;
+  --border: #2e303a;
+  --code-bg: #1f2028;
+  --accent: #c084fc;
+  --accent-bg: rgba(192, 132, 252, 0.15);
+  --accent-border: rgba(192, 132, 252, 0.5);
+  --social-bg: rgba(47, 48, 58, 0.5);
+  --shadow:
+    rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+
+  /* 聊天界面暗色：只覆盖需要变化的值，品牌色和在线色在两种模式下通用 */
+  --primary: #60a5fa;
+  --sidebar-bg: #1b1d25;
+  --surface-bg: #22242e;
+  --surface-border: #34374a;
+  --focus-border: #60a5fa;
+  --hover-bg: #262833;
+  --active-bg: #1e2a44;
+  --active-text: #60a5fa;
+  --text-muted: #6b7280;
+  --user-bubble-bg: #2563eb;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+  /* 用户手动选了亮色时，data-theme='light' 让媒体查询让位 */
+  :root:not([data-theme='light']) {
+    .dark-vars();
   }
 
   #social .button-icon {
@@ -53,13 +87,25 @@
   }
 }
 
+/* 手动切暗色：不依赖系统偏好 */
+:root[data-theme='dark'] {
+  .dark-vars();
+}
+
+/* 原生控件（滚动条、输入框、日期面板）跟随手动选择，而不是系统偏好 */
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+/* 只负责占满视口。
+   刻意不设 text-align：它会被后代继承，之前让聊天区的文字整体居中，
+   只能在助手消息行上用 text-start 打补丁。对齐交给各页面自己声明 */
 #root {
   width: 100%;
-  margin: 0 auto;
-  text-align: center;
   min-height: 100svh;
-  display: flex;
-  flex-direction: column;
   box-sizing: border-box;
 }
 
@@ -109,4 +155,31 @@ code {
   line-height: 135%;
   padding: 4px 8px;
   background: var(--code-bg);
+}
+
+/* 主题切换的 icon 形态：首页用 .chat-menu-item，这里只负责登录页右上角的悬浮按钮。
+   放在全局是因为它跨页面复用，而各页面的 .less 是互不引用的 */
+.theme-toggle-icon {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  background: var(--surface-bg);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+
+  &:hover {
+    background: var(--hover-bg);
+    border-color: var(--focus-border);
+    color: var(--text-h);
+  }
 }

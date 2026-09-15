@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Card, Form, Input, Tabs, App as AntdApp } from 'antd';
 import { loginApi, registerApi } from '@/api/user';
+import ThemeToggle from '@/components/ThemeToggle';
 import { setToken } from '@/utils/auth';
 
 type FormValues = {
@@ -120,9 +121,10 @@ export default function Login() {
   );
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-6">
+    <div className="min-h-screen flex items-center justify-center bg-(--bg) px-4 py-6">
+      <ThemeToggle variant="icon" />
       <Card className="w-96 shadow-sm" styles={{ body: { paddingTop: 8 } }}>
-        <h1 className="text-center text-3xl font-bold mb-2" style={{ color: '#29b8b7', fontFamily: "Cambria, Cochin, Georgia, Times, 'Times New Roman', serif" }}>
+        <h1 className="text-center text-3xl font-bold mb-2" style={{ color: 'var(--brand)', fontFamily: "Cambria, Cochin, Georgia, Times, 'Times New Roman', serif" }}>
           chat-ai
         </h1>
         <Tabs

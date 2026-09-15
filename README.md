@@ -54,4 +54,42 @@ pnpm dev:client    # 前端
 
 - 用户注册 / 登录（JWT 鉴权，密码 scrypt 加盐哈希）
 - SSE 流式聊天（前端流式渲染 Markdown）
-- 历史对话（TODO）
+- 聊天记录入库 + 历史对话（会话列表 / 查看 / 删除）
+- 多轮对话：上下文由服务端从数据库读取拼装，前端无需维护 `messages`
+
+## 接口一览
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/add/user` | 注册 |
+| POST | `/api/login/user` | 登录 |
+| POST | `/api/sse/chat` | SSE 流式聊天，请求体 `{ conversationId?, content }` |
+| GET | `/api/conversations` | 当前用户的会话列表（最近活跃在前） |
+| GET | `/api/conversations/:conversationId/messages` | 某会话的全部消息 |
+| DELETE | `/api/conversations/:conversationId` | 删除会话及其消息 |
+
+除注册、登录外都需要在请求头带上 `Authorization: Bearer <token>`。
+
+`/api/sse/chat` 除流式返回模型内容外，会先推一个具名事件把会话 ID 交给前端，
+后续轮次带上它即可续聊：
+
+```
+event: conversation
+data: {"conversationId":"7505445416825940240"}
+
+data: {"choices":[{"delta":{"content":"我"}}]}
+...
+data: [DONE]
+```
+
+## 数据表
+
+`conversation`、`message` 两张表的定义见 `server/sql/schema.sql`。
+服务启动时会自动执行该文件（语句均为 `CREATE TABLE IF NOT EXISTS`，可重复执行），
+也可以在首次部署时手动执行：
+
+```bash
+mysql -u root -p <database> < server/sql/schema.sql
+```
+
+> 既有的 `user` 表不在仓库内维护，全新环境需要先自行创建。

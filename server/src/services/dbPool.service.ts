@@ -1,4 +1,5 @@
 // 数据库连接池（全局共享，禁止在单次请求后 end()）
+// 注意与 schema.service.ts 区分：本文件只负责建池子，建表在 schema.service.ts
 import mysql from 'mysql2/promise';
 
 const connection = mysql.createPool({
