@@ -70,7 +70,10 @@ async function sseHandler(req: Request, res: Response) {
     conversationId = await createConversation(userId, content);
   }
 
-  // 2、先落库用户消息：上游模型调用失败也不会丢掉用户输入
+  /**
+   * 2、先落库用户消息：上游模型调用失败也不会丢掉用户输入
+   * 先将用户输入的消息存储到message表中
+   */
   await insertMessage({ conversationId, userId, role: 'user', content });
 
   // 3、拼上下文。刚写入的这条用户消息也在其中，所以这里取完直接就是完整对话
@@ -127,10 +130,15 @@ async function sseHandler(req: Request, res: Response) {
 
   // 落库助手回复。客户端中途断开时也把已生成的部分内容存下来——用户已经看到了，
   // 丢掉更难解释。失败只记日志，不影响已经发出的响应。用 persisted 保证只落一次。
+  /**
+   * AI助手回复消息保存入库，回复内容存储在assisstantContent变量中
+   * @returns 
+   */
   const persistAssistant = async () => {
     if (persisted || !assistantContent) return;
     persisted = true;
     try {
+      // AI助手回复消息保存入库，回复内容存储在assisstantContent变量中
       await insertMessage({ conversationId, userId, role: 'assistant', content: assistantContent });
     } catch (err) {
       console.error('助手回复落库失败:', err);

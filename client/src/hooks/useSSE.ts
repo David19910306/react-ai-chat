@@ -18,7 +18,7 @@ type ConnectCallbacks = {
 }
 
 const useFetchSSE = (options: SSEOptions) => {
-  const { url, method = 'POST', headers } = options;
+  const { url, method = 'GET', headers } = options;
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const connect = useCallback((body?: BodyInit, callbacks?: ConnectCallbacks) => {

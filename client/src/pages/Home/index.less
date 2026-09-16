@@ -261,6 +261,46 @@
           white-space: nowrap;
           text-overflow: ellipsis;
         }
+
+        // 删除按钮：占位常驻、默认透明，hover 或键盘聚焦时才浮现，
+        // 这样列表静止时看起来仍然只是一列标题，鼠标扫过才露出操作
+        .history-delete {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          width: 22px;
+          height: 22px;
+          padding: 0;
+          border: none;
+          border-radius: 6px;
+          background: transparent;
+          color: var(--text-muted);
+          opacity: 0;
+          cursor: pointer;
+          transition: opacity 0.2s, background 0.2s, color 0.2s;
+
+          &:hover:not(:disabled) {
+            background: var(--danger-bg);
+            color: var(--danger);
+          }
+          &:focus-visible {
+            opacity: 1;
+            outline: none;
+            box-shadow: 0 0 0 2px var(--danger-bg);
+          }
+          // 触屏没有 hover，按下时直接展开，避免按钮永远点不到
+          &:active:not(:disabled) {
+            opacity: 1;
+          }
+          &:disabled {
+            cursor: default;
+          }
+        }
+        &:hover .history-delete,
+        &:focus-within .history-delete {
+          opacity: 1;
+        }
       }
     }
 

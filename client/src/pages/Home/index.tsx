@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, App as AntdApp } from 'antd';
+import { Button, Popconfirm, App as AntdApp } from 'antd';
 import {
   ListClockIcon,
   LoaderCircleIcon,
@@ -9,12 +9,14 @@ import {
   PlusIcon,
   SendHorizonalIcon,
   SparklesIcon,
+  TrashIcon,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import ThemeToggle from '@/components/ThemeToggle';
 import useFetchSSE from '@/hooks/useSSE';
 import { clearToken, getCurrentUser, getToken } from '@/utils/auth';
 import {
+  deleteConversationApi,
   getConversationMessagesApi,
   listConversationsApi,
   type Conversation,
@@ -51,6 +53,8 @@ export default function Home() {
   // 会话列表游标分页：nextCursor 为 null 表示已经到底
   const [nextCursor, setNextCursor] = useState<ConversationCursor | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  // 正在删除的会话ID，用于在对应列表项上显示加载态并防止重复点击
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // 侧边栏底部展示的登录用户：从 token 解析，刷新页面后依然可用
   const user = useMemo(() => getCurrentUser(), []);
@@ -72,8 +76,12 @@ export default function Home() {
     notification.error({
       message,
       description: error instanceof Error ? error.message : '请求失败',
+      duration: 2000,
     });
-  }, [notification]);
+    if (error instanceof Error && error.message === '令牌已过期，请重新登录'){
+      navigate('/login', { replace: true, });
+    }
+  }, [notification, navigate]);
 
   // 主动刷新会话列表（发消息后调用）。只取第一页并重置游标：
   // 刚聊过的会话必然被顶到最前，一定落在第一页里
@@ -183,6 +191,25 @@ export default function Home() {
     }
   };
 
+  // 删除历史会话：确认后请求服务端，成功则本地移除
+  const onDeleteConversation = async (id: string) => {
+    if (deletingId) return;
+
+    setDeletingId(id);
+    try {
+      await deleteConversationApi(id);
+      setConversations((prev) => prev.filter((item) => item.conversationId !== id));
+      // 删掉的正是当前会话：回到空白态，否则消息区还留着一条服务端已经不存在的会话，
+      // 继续发送时带上这个 conversationId 会被服务端拒绝
+      if (id === conversationId) onNewChat();
+      notification.success({ message: '已删除', duration: 2000 });
+    } catch (error) {
+      notifyError('删除失败', error);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const onSend = () => {
     const content = value.trim();
     if (!content) {
@@ -192,7 +219,10 @@ export default function Home() {
     }
     if (loading) return;
 
-    // 追加用户消息 + 空的助手消息（等待流式填充）
+    /**
+     * 追加用户消息 + 空的助手消息（等待流式填充）
+     * 用户消息：userMsg，空助手消息：{ id: createId(), role: 'assistant', content: '' }
+     */
     const userMsg: ChatMessage = { id: createId(), role: 'user', content };
     setMessages((prev) => [...prev, userMsg, { id: createId(), role: 'assistant', content: '' }]);
     setValue('');
@@ -266,6 +296,30 @@ export default function Home() {
             >
               <MessageSquareIcon size={14} className='history-item-icon' />
               <span className='history-item-title'>{item.title || '新对话'}</span>
+              {/* 删除确认。外面包一层 span 拦截冒泡：点删除按钮不应该顺带切换会话。
+                  气泡本身挂在 body 上，不会冒泡到这里 */}
+              <span onClick={(e) => e.stopPropagation()}>
+                <Popconfirm
+                  title='删除该对话？'
+                  description='删除后无法恢复'
+                  okText='删除'
+                  cancelText='取消'
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => onDeleteConversation(item.conversationId)}
+                >
+                  <button
+                    type='button'
+                    className='history-delete'
+                    title='删除对话'
+                    aria-label='删除对话'
+                    disabled={deletingId !== null}
+                  >
+                    {deletingId === item.conversationId
+                      ? <LoaderCircleIcon size={14} className='animate-spin' />
+                      : <TrashIcon size={14} />}
+                  </button>
+                </Popconfirm>
+              </span>
             </div>
           ))}
           {nextCursor && (
