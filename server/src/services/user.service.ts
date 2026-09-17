@@ -8,9 +8,8 @@ import { Snowflake } from "@theinternetfolks/snowflake";
 import jsonwebtoken from "jsonwebtoken";
 
 import connection from "./dbPool.service";
+import { JWT_EXPIRES_IN, JWT_SECRET } from "../config";
 import { hashPassword, verifyPassword } from "../utils";
-
-const JWT_SECRET = process.env.JWT_SECRET ?? '';
 
 /*************  检查用户名是否存在  ***************/
 async function findUserName(username: string): Promise<QueryResult> {
@@ -43,7 +42,7 @@ async function registerUser(req: Request, res: Response) {
   const [addRes]: any = await connection.query(
     'insert into user(userId, username, address, tel, email, password) values(?, ?, ?, ?, ?, ?)',
     // 可选字段用空字符串占位（表结构 NOT NULL 且无默认值，不能传 null）
-    [userId, username, address ?? '', tel ?? '', email ?? '', hashPassword(password)]
+    [userId, username, address ?? '', tel ?? '', email ?? '', await hashPassword(password)]
   );
   if (addRes.affectedRows !== 1) {
     return res.status(500).json({ message: '用户新增失败' });
@@ -53,7 +52,7 @@ async function registerUser(req: Request, res: Response) {
   const token = jsonwebtoken.sign(
     { userId, username },
     JWT_SECRET,
-    { expiresIn: '5h' }
+    { expiresIn: JWT_EXPIRES_IN }
   );
 
   // 6、返回token + 用户信息（绝不返回密码哈希）
@@ -70,7 +69,7 @@ async function loginUser(username: string, password: string) {
   const user = rows?.[0];
 
   // 2、没找到用户 / 密码不匹配：统一返回失败
-  if (!user || !verifyPassword(password, user.password)) {
+  if (!user || !(await verifyPassword(password, user.password))) {
     return { isLogin: false, userId: null, username: '' };
   }
 

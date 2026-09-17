@@ -1,8 +1,7 @@
 import { type Request, type Response } from "express";
 import jsonwebtoken from 'jsonwebtoken';
 import { registerUser, loginUser as login } from "../services/user.service";
-
-const JWT_SECRET = process.env.JWT_SECRET ?? '';
+import { JWT_EXPIRES_IN, JWT_SECRET } from "../config";
 
 // 用户注册
 async function addUser(req: Request, res: Response) {
@@ -25,7 +24,7 @@ async function loginUser(req: Request, res: Response) {
   const token = jsonwebtoken.sign(
     { userId, username: realUsername },
     JWT_SECRET,
-    { expiresIn: '5h' }
+    { expiresIn: JWT_EXPIRES_IN }
   );
   res.status(200).json({ user: { userId, username: realUsername, token } });
 }

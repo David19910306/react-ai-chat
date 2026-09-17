@@ -9,19 +9,28 @@ import {
   type MessageRow,
 } from '../services/conversation.service';
 
+// SSE 心跳间隔。模型产出首个 token 前可能长时间无字节，中间的反向代理（nginx / ALB）
+// 会按 idle 超时掐断连接，定期发一个注释帧把连接保活。
+const HEARTBEAT_INTERVAL = 15_000;
+
 /**
- * 懒加载 OpenAI 客户端：未配置 API Key 时不在模块加载阶段崩溃，
- * 而是在请求时返回明确的错误提示
+ * OpenAI 客户端单例：SDK 内部持有连接池，每次请求 new 一个会导致每次都重新建连 + TLS 握手。
+ * 仍然懒加载——首屏未配置 key 时不在模块加载阶段崩溃，而是在请求时给出明确错误。
  */
-function createOpenAIClient() {
+let openAIClient: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI {
+  if (openAIClient) return openAIClient;
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error('未配置 OPENAI_API_KEY，请在 server/.env.development 中填写');
   }
-  return new OpenAI({
+  openAIClient = new OpenAI({
     apiKey,
     baseURL: process.env.OPENAI_BASE_URL,
   });
+  return openAIClient;
 }
 
 /**
@@ -103,9 +112,9 @@ async function sseHandler(req: Request, res: Response) {
 
   // 先建立上游连接：认证失败、未配置 key 等错误以普通 JSON 返回，
   // 避免已 flush 的 SSE 头无法回传 HTTP 错误码
-  let stream: Awaited<ReturnType<ReturnType<typeof createOpenAIClient>['chat']['completions']['create']>>;
+  let stream: Awaited<ReturnType<ReturnType<typeof getOpenAIClient>['chat']['completions']['create']>>;
   try {
-    const openai = createOpenAIClient();
+    const openai = getOpenAIClient();
     stream = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL ?? 'deepseek-chat',
       messages,
@@ -119,10 +128,18 @@ async function sseHandler(req: Request, res: Response) {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  // 让 nginx 之类的反向代理关闭缓冲，否则响应会被攒够一个 buffer 才下发，流式效果消失
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
   // 4、首帧回传会话ID，前端据此绑定会话，后续发送带上它即可续聊
   res.write(`event: conversation\ndata: ${JSON.stringify({ conversationId })}\n\n`);
+
+  // 心跳：SSE 注释帧（以冒号开头），客户端解析时直接跳过，只用于保活
+  const heartbeat = setInterval(() => {
+    if (res.writableEnded || res.destroyed) return;
+    res.write(': ping\n\n');
+  }, HEARTBEAT_INTERVAL);
 
   // 累加助手回复，流结束后统一落库
   let assistantContent = '';
@@ -132,7 +149,7 @@ async function sseHandler(req: Request, res: Response) {
   // 丢掉更难解释。失败只记日志，不影响已经发出的响应。用 persisted 保证只落一次。
   /**
    * AI助手回复消息保存入库，回复内容存储在assisstantContent变量中
-   * @returns 
+   * @returns
    */
   const persistAssistant = async () => {
     if (persisted || !assistantContent) return;
@@ -163,6 +180,8 @@ async function sseHandler(req: Request, res: Response) {
       res.write(`event: error\ndata: ${JSON.stringify({ error: err.message ?? 'stream error' })}\n\n`);
     }
   } finally {
+    // 先停心跳再收尾，避免 res.end() 之后定时器还在往里写
+    clearInterval(heartbeat);
     if (!res.destroyed) res.end();
     // 兜底：客户端中途断开时上面的落库不会执行到，这里补上（已落库则是空操作）
     await persistAssistant();

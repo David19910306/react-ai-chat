@@ -2,7 +2,7 @@
 import { type NextFunction, type Request, type Response } from "express";
 import jsonwebtoken from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET ?? '';
+import { JWT_SECRET } from "../config";
 
 // 无需 token 的白名单路由（注册、登录）
 const WHITE_LIST = new Set(['/api/add/user', '/api/login/user']);
