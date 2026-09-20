@@ -46,8 +46,11 @@ function assertEnv(): void {
 // 校验通过后再取，保证类型上是确定的 string，调用方不必再 ?? ''
 const JWT_SECRET = process.env.JWT_SECRET ?? '';
 
+const UPLOAD_DIR = path.join(__dirname, '../uploadFiles');
+
 export {
   JWT_EXPIRES_IN,
   JWT_SECRET,
   assertEnv,
+  UPLOAD_DIR,
 };

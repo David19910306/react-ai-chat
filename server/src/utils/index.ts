@@ -45,3 +45,18 @@ export async function verifyPassword(password: string, stored: string): Promise<
     return false;
   }
 }
+
+// 获取当前的时间，精确到秒
+export function getCurrentTime() {
+  const currentTime = new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false // 使用24小时制
+  });
+  return currentTime.format(new Date());
+}
+

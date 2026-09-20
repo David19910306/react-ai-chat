@@ -90,9 +90,18 @@
     color: var(--text-muted);
   }
 
-  table {
-    width: 100%;
+  // 表格外层容器，由 index.tsx 的 MARKDOWN_COMPONENTS.table 注入。
+  // 模型输出的表格列数不可控，气泡宽度又是固定的，所以让它自己横向滚动，别顶破布局
+  .chat-table-wrap {
+    .scrollbar-thin();
     margin: 12px 0;
+    overflow-x: auto;
+  }
+
+  table {
+    // 用 min-width 而不是 width：列少时铺满气泡宽度，列多时按内容收窄，
+    // 收不下就交给外层容器出横向滚动条
+    min-width: 100%;
     border-collapse: collapse;
     font-size: 0.9em;
     th, td {
@@ -498,8 +507,17 @@
       .chat-input-actions {
         display: flex;
         align-items: center;
-        justify-content: flex-end;
+        justify-content: space-between;
         padding: 6px 10px 10px;
+        .upload-icon{
+          display: flex;
+          cursor: pointer;
+          padding: 6px;
+          &:hover {
+            background-color: #f5f5f5;
+            border-radius: 50%;
+          }
+        }
       }
     }
   }

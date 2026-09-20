@@ -4,3 +4,4 @@
 export { default as useRouter } from './user.routes';
 export { default as sseRouter } from './sse.router';
 export { default as conversationRouter } from './conversation.router';
+export { default as uploadRouter } from './upload.router';

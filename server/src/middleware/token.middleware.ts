@@ -8,7 +8,8 @@ import { JWT_SECRET } from "../config";
 const WHITE_LIST = new Set(['/api/add/user', '/api/login/user']);
 
 function validateAccessToken(req: Request, res: Response, next: NextFunction) {
-  if (WHITE_LIST.has(req.path)) {
+  // 白名单以及静态文件预览跳过token鉴权
+  if (WHITE_LIST.has(req.path) || req.path.startsWith('/uploadFiles')) {
     next();
     return;
   }

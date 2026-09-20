@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Popconfirm, App as AntdApp } from 'antd';
+import { Button, Popconfirm, App as AntdApp, Upload } from 'antd';
 import {
   ListClockIcon,
   LoaderCircleIcon,
   LogOutIcon,
   MessageSquareIcon,
+  Plus,
   PlusIcon,
   SendHorizonalIcon,
   SparklesIcon,
   TrashIcon,
 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import ThemeToggle from '@/components/ThemeToggle';
 import useFetchSSE from '@/hooks/useSSE';
 import { clearToken, getCurrentUser, getToken } from '@/utils/auth';
@@ -33,6 +35,27 @@ type ChatMessage = {
 
 const createId = () =>
   typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : String(Date.now());
+
+/**
+ * 这两个常量提到模块作用域，不是随手放的位置：
+ * react-markdown 内部用 useMemo 缓存解析结果，依赖数组里就有 options.remarkPlugins
+ * （见其源码 lib/index.js）。写成内联字面量的话数组每次渲染都是新引用，
+ * 缓存必然失效，而流式输出时每个 chunk 都会触发一次渲染 —— 等于把整段 markdown 重头解析一遍。
+ */
+// 表格语法（| a | b |）属于 GFM 扩展，react-markdown 默认只解析 CommonMark，不加这个插件表格会原样当文本输出
+const REMARK_PLUGINS = [remarkGfm];
+
+const MARKDOWN_COMPONENTS: Components = {
+  // 模型输出的表格列数不可控，直接放在气泡里会把它顶变形；
+  // 外面包一层可横向滚动的容器（样式见 index.less 的 .chat-table-wrap）。
+  // 只取 children 是刻意的：react-markdown 会额外注入一个 node（AST 节点，见其源码里的 passNode: true），
+  // 整包 payload 摊到 <table> 上会变成非法的 DOM 属性并触发 React 告警
+  table: ({ children }) => (
+    <div className='chat-table-wrap'>
+      <table>{children}</table>
+    </div>
+  ),
+};
 
 export default function Home() {
   const navigate = useNavigate();
@@ -372,7 +395,12 @@ export default function Home() {
                   <div className='chat-avatar'>AI</div>
                   <div className='chat-answer chat-markdown'>
                     {message.content ? (
-                      <ReactMarkdown>{message.content}</ReactMarkdown>
+                      <ReactMarkdown
+                        remarkPlugins={REMARK_PLUGINS}
+                        components={MARKDOWN_COMPONENTS}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
                     ) : (
                       loading && <span className='text-(--text-muted)'>思考中…</span>
                     )}
@@ -407,6 +435,10 @@ export default function Home() {
             />
 
             <div className='chat-input-actions'>
+              {/* 文件上传 */}
+              <Upload className='upload-icon'>
+                <Plus size='18' />
+              </Upload>
               <Button
                 type='primary'
                 icon={<SendHorizonalIcon size={16} />}
