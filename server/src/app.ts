@@ -7,7 +7,7 @@
 import express, { type Express, } from "express";
 import cors from 'cors';
 import helmet from "helmet";
-import { conversationRouter, sseRouter, uploadRouter, useRouter } from "./router";
+import { conversationRouter, sseRouter, fileRouter, useRouter } from "./router";
 import { ErrorMiddleWare } from "./middleware/error.middleware";
 import { globalLimiter } from "./middleware/rateLimit.middleware";
 import validateAccessToken from "./middleware/token.middleware";
@@ -16,19 +16,22 @@ import { UPLOAD_DIR } from "./config";
 const app: Express = express();
 
 // 注册全局中间件
-app.use(cors());
+app.use(cors({
+  origin: 'http://localhost:5173' // 配置前端访问地址, 确保静态访问文件不会出现跨域问题
+}));
+
+app.use('/uploadFiles', express.static(UPLOAD_DIR)); // 静态资源访问：http://localhost:3000/uploadFiles/xxx
 // 限流放在 body 解析之前：被限流的请求没必要先把请求体读进内存
 app.use(globalLimiter);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(helmet());
 app.use(validateAccessToken); // token验证
-app.use('/uploadFiles', express.static(UPLOAD_DIR)); // 静态资源访问：http://localhost:3000/uploadFiles/xxx
 
 app.use(useRouter);
 app.use(conversationRouter);
 app.use(sseRouter);
-app.use(uploadRouter);
+app.use(fileRouter);
 
 // 404 兜底：放在所有路由之后。不加的话未匹配路由会落到 Express 默认的 HTML 错误页，
 // 与其余接口的 JSON 响应格式不一致

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Popconfirm, App as AntdApp, Upload } from 'antd';
+import { Button, Popconfirm, App as AntdApp, Upload, Image } from 'antd';
 import {
   ListClockIcon,
   LoaderCircleIcon,
@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { request } from '@/api/request';
 import ThemeToggle from '@/components/ThemeToggle';
 import useFetchSSE from '@/hooks/useSSE';
 import { clearToken, getCurrentUser, getToken } from '@/utils/auth';
@@ -26,12 +27,23 @@ import {
 } from '@/api/chat';
 
 import './index.less';
+import { CloseCircleFilled } from '@ant-design/icons';
 
 type ChatMessage = {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
 };
+
+type UploadFile = {
+  previewUrl: string;
+  filename: string;
+  type: string;
+  md5: string;
+  [key: string]: string;
+}
+
+const imageType = ['png', 'jpg', 'jpeg'];
 
 const createId = () =>
   typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : String(Date.now());
@@ -53,6 +65,11 @@ const MARKDOWN_COMPONENTS: Components = {
   table: ({ children }) => (
     <div className='chat-table-wrap'>
       <table>{children}</table>
+    </div>
+  ),
+  img: ({ children }) => (
+    <div className='chat-img-wrap'>
+      <img>{children}</img>
     </div>
   ),
 };
@@ -78,6 +95,8 @@ export default function Home() {
   const [loadingMore, setLoadingMore] = useState(false);
   // 正在删除的会话ID，用于在对应列表项上显示加载态并防止重复点击
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // 文件上传返回的预览地址
+  const [fileList, setFileList] = useState<UploadFile[]>([]);
 
   // 侧边栏底部展示的登录用户：从 token 解析，刷新页面后依然可用
   const user = useMemo(() => getCurrentUser(), []);
@@ -139,6 +158,11 @@ export default function Home() {
     }
   };
 
+  const queryFilesList = async () => {
+    const result: {code: number, data: [], message: string} = await request('/file/lists', { method: 'GET',});
+    return result;
+  }
+
   // 未登录跳转登录页，否则加载会话列表
   useEffect(() => {
     if (!getToken()) {
@@ -167,6 +191,9 @@ export default function Home() {
 
   // 组件卸载时断开 SSE 连接
   useEffect(() => () => disconnect(), [disconnect]);
+  useEffect(() => {
+    queryFilesList().then(response => setFileList(response.data));
+  }, []);
 
   // 退出登录：断开流式连接 → 清除 token → 回登录页
   const onLogout = () => {
@@ -235,7 +262,7 @@ export default function Home() {
 
   const onSend = () => {
     const content = value.trim();
-    if (!content) {
+    if (!content || fileList.length === 0) {
       textareaRef.current?.focus();
       notification.warning({ message: '请输入内容' });
       return;
@@ -417,6 +444,46 @@ export default function Home() {
         </div>
         <div className='chat-composer'>
           <div className={`chat-input-box${isFocused ? ' chat-input-box-focused' : ''}`}>
+            {
+              fileList.length > 0? (
+                <div className='flex rounded-tl-[14px] rounded-tr-[14px] pt-2 pl-2'>
+                  {
+                    fileList.map((file: UploadFile) => (
+                        <div key={file.id} className='fileItemPreview'>
+                          <CloseCircleFilled 
+                            size={14} 
+                            className='removeFileIcon'
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              const result = await request(`/file/delete/${file.id}`, { method: 'DELETE', });
+                              if (!result) {
+                                const result = await queryFilesList();
+                                setFileList(result.data ?? []);
+                              }
+                            }}
+                            color='#252525' 
+                          /> 
+                          {
+                            imageType.includes(file.type)? (
+                              <Image 
+                                className='rounded-[0.625rem] object-cover' 
+                                width='54px' 
+                                height='54px' 
+                                style={{border: '1px solid #00000012'}}
+                                src={`http://localhost:3000/${file.previewUrl}`}
+                                preview
+                              />
+                            ): (
+                              <div></div>
+                            )
+                          }
+                        </div>
+                      )
+                    )
+                  }
+                </div>
+              ): null
+            }
             <textarea
               ref={textareaRef}
               onFocus={() => setIsFocused(true)}
@@ -436,7 +503,26 @@ export default function Home() {
 
             <div className='chat-input-actions'>
               {/* 文件上传 */}
-              <Upload className='upload-icon'>
+              <Upload 
+                className='upload-icon'
+                showUploadList={false}
+                multiple
+                customRequest={async (options) => {
+                  const { file, onError,  } = options;
+                  const formData = new FormData();
+                  formData.append("file", file);
+                  try {
+                    const result: {message: string, uploadedFiles: UploadFile[]} = await request('/file/upload', { 
+                      body: formData, 
+                      method: 'POST', 
+                    });
+                    setFileList(prev => [...prev, ...(result?.uploadedFiles ?? [])])
+                  } catch (error) {
+                    notifyError('上传失败', error)
+                    onError?.(error as Error);
+                  }
+                }}
+              >
                 <Plus size='18' />
               </Upload>
               <Button

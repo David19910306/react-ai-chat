@@ -486,6 +486,26 @@
         box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus-border) 15%, transparent);
       }
 
+      .fileItemPreview{
+        position: relative;
+        width: fit-content;
+        height: 54px;
+        .removeFileIcon{
+          position: absolute;
+          top: -4px;
+          right: -4px;
+          cursor: pointer;
+          opacity: 0;
+          transition: opacity .2s; /* 平滑过渡 */
+        }
+        .ant-image-cover:hover, .ant-image-cover {
+          border-radius: .625rem;
+        }
+      }
+      .fileItemPreview:hover .removeFileIcon {
+        opacity: 1;
+      }
+
       textarea {
         display: block;
         width: 100%;

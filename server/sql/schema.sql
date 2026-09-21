@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS `file` (
   `file_suffix` VARCHAR(50) NOT NULL COMMENT '文件后缀名',
   `mime_type` VARCHAR(100) NOT NULL COMMENT 'MIME文件类型：application/pdf',
   `file_size` BIGINT NOT NULL COMMENT '文件大小',
+  `previewUrl` VARCHAR(100) NOT NULL COMMENT '预览地址',
   `storage_path` VARCHAR(512) NOT NULL COMMENT '存储地址（本地相对路径）',
   `md5` VARCHAR(32) NOT NULL COMMENT '文件 md5，用于**秒传、重复文件校验**',
   `create_by` VARCHAR(32) NOT NULL COMMENT '上传人id',

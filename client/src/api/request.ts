@@ -7,7 +7,10 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const response = await fetch(`${BASE_URL}${url}`, {
     ...options,
-    headers: {
+    headers: url === '/file/upload'? {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers ?? {}),
+    }: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers ?? {}),
