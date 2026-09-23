@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Popconfirm, App as AntdApp, Upload, Image } from 'antd';
 import {
@@ -12,6 +12,9 @@ import {
   SparklesIcon,
   TrashIcon,
 } from 'lucide-react';
+import { CloseCircleFilled } from '@ant-design/icons';
+import { FaRegFileExcel, FaRegFilePdf, FaRegFileWord } from 'react-icons/fa';
+import { BsFiletypeTxt } from 'react-icons/bs';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { request } from '@/api/request';
@@ -27,7 +30,6 @@ import {
 } from '@/api/chat';
 
 import './index.less';
-import { CloseCircleFilled } from '@ant-design/icons';
 
 type ChatMessage = {
   id: string;
@@ -73,6 +75,15 @@ const MARKDOWN_COMPONENTS: Components = {
     </div>
   ),
 };
+
+const FILE_TYPE_ICON: Record<string, ReactNode> = {
+  pdf: <FaRegFilePdf color='#258832' size='28' />,
+  txt: <BsFiletypeTxt color='#258832' size='28' />,
+  xls: <FaRegFileExcel color='#258832' size='28' />,
+  xlsx: <FaRegFileExcel color='#258832' size='28' />,
+  docx: <FaRegFileWord color='#258832' size='28' />,
+  doc: <FaRegFileWord color='#258832' size='28' />,
+}
 
 export default function Home() {
   const navigate = useNavigate();
@@ -474,7 +485,13 @@ export default function Home() {
                                 preview
                               />
                             ): (
-                              <div></div>
+                              <div className='flex items-center w-30 h-fit pt-1.5 pb-1.5 pr-2 pl-2 rounded-md bg-[#f5f5f5]'>
+                                {FILE_TYPE_ICON[file.type]}
+                                <div className='flex flex-col justify-center ml-1'>
+                                  <span className='text-[14px] leading-4 w-20 text-ellipsis whitespace-nowrap overflow-hidden'>{file.filename}</span>
+                                  <span className='text-[12px] leading-3.5 text-[#0000004D]'>{file.type} - {file.file_size}</span>
+                                </div>
+                              </div>
                             )
                           }
                         </div>
@@ -507,6 +524,7 @@ export default function Home() {
                 className='upload-icon'
                 showUploadList={false}
                 multiple
+                accept='.jpg,.png,.xls,.xlsx,.pdf,.txt,.doc,.docx'
                 customRequest={async (options) => {
                   const { file, onError,  } = options;
                   const formData = new FormData();
