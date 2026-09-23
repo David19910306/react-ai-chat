@@ -262,7 +262,7 @@ export default function Home() {
 
   const onSend = () => {
     const content = value.trim();
-    if (!content || fileList.length === 0) {
+    if (!content && fileList.length === 0) {
       textareaRef.current?.focus();
       notification.warning({ message: '请输入内容' });
       return;
