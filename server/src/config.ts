@@ -4,6 +4,7 @@
  * 必须在 index.ts 中第一个 import，确保其他模块在 module 作用域读 env 时已加载完成
  */
 import { configDotenv } from 'dotenv';
+import fs from 'node:fs';
 import path from 'node:path';
 
 const envFile = process.env.NODE_ENV === 'production' ? '.env' : '.env.development';
@@ -48,9 +49,45 @@ const JWT_SECRET = process.env.JWT_SECRET ?? '';
 
 const UPLOAD_DIR = path.join(__dirname, '../uploadFiles');
 
+// uploadFiles/ 在 .gitignore 里，新克隆的仓库没有这个目录。
+// multer 的 diskStorage 不会自动建目录，缺了会在第一次上传时报 ENOENT 500，
+// 排查起来像是上传功能坏了，所以在模块加载阶段就建好
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+// 单个文件大小上限 20MB
+const UPLOAD_MAX_FILE_SIZE = 20 * 1024 * 1024;
+// 单次请求文件数上限
+const UPLOAD_MAX_FILES = 10;
+
+/**
+ * 允许上传的后缀白名单，与前端 Upload 的 accept 保持一致。
+ *
+ * 刻意只校验后缀而不校验 mimetype：mimetype 由浏览器给出，同一个 .xls 在不同浏览器下
+ * 可能是 application/vnd.ms-excel 也可能是 application/octet-stream，严格匹配会误杀正常文件。
+ * 真正的防护在下载环节——预览接口按后缀推导 Content-Type，非图片一律 attachment + nosniff，
+ * 伪装成 .txt 的 HTML 也不会在本站域下被执行。
+ */
+const UPLOAD_ALLOWED_SUFFIXES = new Set([
+  'jpg', 'jpeg', 'png',
+  'pdf', 'txt',
+  'doc', 'docx', 'xls', 'xlsx',
+]);
+
+// 可内联预览的图片类型：后缀 -> Content-Type。
+// 其余类型一律走附件下载，避免把用户上传的内容当成可渲染文档返回
+const IMAGE_CONTENT_TYPE: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+};
+
 export {
   JWT_EXPIRES_IN,
   JWT_SECRET,
   assertEnv,
   UPLOAD_DIR,
+  UPLOAD_MAX_FILE_SIZE,
+  UPLOAD_MAX_FILES,
+  UPLOAD_ALLOWED_SUFFIXES,
+  IMAGE_CONTENT_TYPE,
 };

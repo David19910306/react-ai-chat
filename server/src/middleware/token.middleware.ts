@@ -8,8 +8,10 @@ import { JWT_SECRET } from "../config";
 const WHITE_LIST = new Set(['/api/add/user', '/api/login/user']);
 
 function validateAccessToken(req: Request, res: Response, next: NextFunction) {
-  // 白名单以及静态文件预览跳过token鉴权
-  if (WHITE_LIST.has(req.path) || req.path.startsWith('/uploadFiles')) {
+  // 白名单路由（注册、登录）跳过鉴权。
+  // 原先还放行了 /uploadFiles 前缀用于静态预览，那等于把所有上传文件裸奔在公网上——
+  // 该静态路由已下线，预览改走 /api/file/preview/:fileId，必须带 token
+  if (WHITE_LIST.has(req.path)) {
     next();
     return;
   }

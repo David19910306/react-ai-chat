@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Button, Popconfirm, App as AntdApp, Upload, Image } from 'antd';
+import { Button, Popconfirm, App as AntdApp, Upload } from 'antd';
 import {
   ListClockIcon,
   LoaderCircleIcon,
@@ -18,6 +18,7 @@ import { BsFiletypeTxt } from 'react-icons/bs';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { request } from '@/api/request';
+import AuthImage from '@/components/AuthImage';
 import ThemeToggle from '@/components/ThemeToggle';
 import useFetchSSE from '@/hooks/useSSE';
 import { clearToken, getCurrentUser, getToken } from '@/utils/auth';
@@ -38,17 +39,29 @@ type ChatMessage = {
 };
 
 type UploadFile = {
-  previewUrl: string;
+  id: string;
   filename: string;
+  /** 文件后缀，小写不含点 */
   type: string;
+  size: number;
   md5: string;
-  [key: string]: string;
+  previewUrl: string;
 }
 
 const imageType = ['png', 'jpg', 'jpeg'];
 
 const createId = () =>
   typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : String(Date.now());
+
+// 字节数转可读体积。服务端存的是原始字节，直接显示「1048576」没人看得懂
+const formatFileSize = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const size = bytes / 1024 ** index;
+  // 到 KB 以上保留一位小数，字节数则不需要小数
+  return `${index === 0 ? size : size.toFixed(1)} ${units[index]}`;
+};
 
 /**
  * 这两个常量提到模块作用域，不是随手放的位置：
@@ -170,7 +183,8 @@ export default function Home() {
   };
 
   const queryFilesList = async () => {
-    const result: {code: number, data: [], message: string} = await request('/file/lists', { method: 'GET',});
+    const result: { code: number; data: UploadFile[]; message: string } =
+      await request('/file/lists', { method: 'GET' });
     return result;
   }
 
@@ -461,35 +475,38 @@ export default function Home() {
                   {
                     fileList.map((file: UploadFile) => (
                         <div key={file.id} className='fileItemPreview'>
-                          <CloseCircleFilled 
-                            size={14} 
+                          <CloseCircleFilled
+                            size={14}
                             className='removeFileIcon'
                             onClick={async (e) => {
                               e.stopPropagation();
-                              const result = await request(`/file/delete/${file.id}`, { method: 'DELETE', });
-                              if (!result) {
-                                const result = await queryFilesList();
-                                setFileList(result.data ?? []);
+                              try {
+                                await request(`/file/delete/${file.id}`, { method: 'DELETE' });
+                                // 直接本地摘掉这一项，不再重新拉全量列表：删的就是刚点的那个，
+                                // 再请求一次既慢，又会把其它历史文件一并灌进待发送区
+                                setFileList((prev) => prev.filter((item) => item.id !== file.id));
+                              } catch (error) {
+                                notifyError('删除失败', error);
                               }
                             }}
-                            color='#252525' 
-                          /> 
+                            color='#252525'
+                          />
                           {
                             imageType.includes(file.type)? (
-                              <Image 
-                                className='rounded-[0.625rem] object-cover' 
-                                width='54px' 
-                                height='54px' 
+                              <AuthImage
+                                className='rounded-[0.625rem] object-cover'
+                                width='54px'
+                                height='54px'
                                 style={{border: '1px solid #00000012'}}
-                                src={`http://localhost:3000/${file.previewUrl}`}
-                                preview
+                                fileId={file.id}
+                                alt={file.filename}
                               />
                             ): (
                               <div className='flex items-center w-30 h-fit pt-1.5 pb-1.5 pr-2 pl-2 rounded-md bg-[#f5f5f5]'>
                                 {FILE_TYPE_ICON[file.type]}
                                 <div className='flex flex-col justify-center ml-1'>
                                   <span className='text-[14px] leading-4 w-20 text-ellipsis whitespace-nowrap overflow-hidden'>{file.filename}</span>
-                                  <span className='text-[12px] leading-3.5 text-[#0000004D]'>{file.type} - {file.file_size}</span>
+                                  <span className='text-[12px] leading-3.5 text-[#0000004D]'>{file.type} - {formatFileSize(file.size)}</span>
                                 </div>
                               </div>
                             )
@@ -526,15 +543,17 @@ export default function Home() {
                 multiple
                 accept='.jpg,.png,.xls,.xlsx,.pdf,.txt,.doc,.docx'
                 customRequest={async (options) => {
-                  const { file, onError,  } = options;
+                  const { file, onSuccess, onError } = options;
                   const formData = new FormData();
                   formData.append("file", file);
                   try {
-                    const result: {message: string, uploadedFiles: UploadFile[]} = await request('/file/upload', { 
-                      body: formData, 
-                      method: 'POST', 
+                    const result: {message: string, uploadedFiles: UploadFile[]} = await request('/file/upload', {
+                      body: formData,
+                      method: 'POST',
                     });
                     setFileList(prev => [...prev, ...(result?.uploadedFiles ?? [])])
+                    // 必须回调，否则 antd 内部这条上传记录会一直停在 uploading 状态不释放
+                    onSuccess?.(result);
                   } catch (error) {
                     notifyError('上传失败', error)
                     onError?.(error as Error);

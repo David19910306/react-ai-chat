@@ -11,7 +11,6 @@ import { conversationRouter, sseRouter, fileRouter, useRouter } from "./router";
 import { ErrorMiddleWare } from "./middleware/error.middleware";
 import { globalLimiter } from "./middleware/rateLimit.middleware";
 import validateAccessToken from "./middleware/token.middleware";
-import { UPLOAD_DIR } from "./config";
 
 const app: Express = express();
 
@@ -20,7 +19,9 @@ app.use(cors({
   origin: 'http://localhost:5173' // 配置前端访问地址, 确保静态访问文件不会出现跨域问题
 }));
 
-app.use('/uploadFiles', express.static(UPLOAD_DIR)); // 静态资源访问：http://localhost:3000/uploadFiles/xxx
+// 刻意不用 express.static 托管 uploadFiles：那条路由不鉴权，配合可猜的文件名
+// 等于任何人都能遍历下载别人上传的文件。预览统一走 GET /api/file/preview/:fileId，
+// 经 token 中间件鉴权并校验归属
 // 限流放在 body 解析之前：被限流的请求没必要先把请求体读进内存
 app.use(globalLimiter);
 app.use(express.json());

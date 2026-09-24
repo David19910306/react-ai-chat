@@ -116,7 +116,7 @@ async function sseHandler(req: Request, res: Response) {
   try {
     const openai = getOpenAIClient();
     stream = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL ?? 'deepseek-chat',
+      model: process.env.OPENAI_MODEL ?? 'deepseek-v4-flash',
       messages,
       stream: true,
     }, { signal: abortControl.signal });
