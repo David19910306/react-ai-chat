@@ -5,6 +5,7 @@ import './config';
 import app from './app';
 import { assertEnv } from './config';
 import { initSchema } from './services/schema.service';
+import { startOrphanFileCleanup } from './services/fileCleanup.service';
 import connection from './services/dbPool.service';
 
 const PORT = Number(process.env.PORT ?? 3000);
@@ -29,6 +30,10 @@ initSchema()
       console.log('server is available, running in http://localhost:' + PORT);
     });
 
+    // 建表之后再启动回收任务：它要查 message_file，表还没建好会直接报错。
+    // 放在 listen 之后是为了不让首次扫描（可能删几百个文件）挡住端口就绪
+    const stopFileCleanup = startOrphanFileCleanup();
+
     let shuttingDown = false;
 
     async function shutdown(signal: string) {
@@ -36,6 +41,9 @@ initSchema()
       if (shuttingDown) return;
       shuttingDown = true;
       console.log(`收到 ${signal}，开始优雅关闭...`);
+
+      // 停止回收任务，避免它在连接池关闭之后还在往库里写
+      stopFileCleanup();
 
       const forceTimer = setTimeout(() => {
         console.error('优雅关闭超时，强制退出');

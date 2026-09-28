@@ -1,4 +1,5 @@
 // 历史对话相关接口封装
+import type { UploadFile } from './file';
 import { request } from './request';
 
 type Conversation = {
@@ -13,6 +14,8 @@ type ConversationMessage = {
   role: 'user' | 'assistant' | 'system';
   content: string;
   createTime: string;
+  /** 这条消息发出的附件。仅有用户消息会带，已被删除的文件不会出现在这里 */
+  attachments?: UploadFile[];
 };
 
 // 游标指向「上一页最后一条」，原样回传给服务端即可取下一页

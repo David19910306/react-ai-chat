@@ -181,6 +181,19 @@ async function deleteConversation(conversationId: string, userId: string): Promi
   try {
     await conn.beginTransaction();
 
+    /**
+     * 先删附件绑定，再删消息：message_file 没有外键，删消息不会级联，
+     * 反过来的话 messageId 已经没了，这些绑定的归属就查不出来了
+     *
+     * 这里刻意不连带删 file 记录和磁盘文件：同一个文件可能被别的会话引用，
+     * 一句话删掉会误伤。丢掉了绑定的文件由「未发送附件」的清理任务兜底回收
+     */
+    await conn.query(
+      `delete mf from message_file mf
+         join message m on m.messageId = mf.messageId
+        where m.conversationId = ? and m.userId = ?`,
+      [conversationId, userId]
+    );
     await conn.query(
       'delete from message where conversationId = ? and userId = ?',
       [conversationId, userId]

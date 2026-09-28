@@ -437,6 +437,19 @@
 
       &.chat-row-user {
         justify-content: flex-end;
+        // 用户消息行里「附件区」和「文字气泡」是两个并列子元素，
+        // 默认的 row 方向会让它们左右排；改成列方向让附件叠在气泡上方，并整体保持右对齐
+        flex-direction: column;
+        align-items: flex-end;
+      }
+
+      // 气泡上方的附件区：多个附件自动换行。
+      // 与下方气泡的间距由 .chat-row 的 gap 提供（gap 在列方向同样生效，不必再加 margin-bottom）
+      .chat-bubble-attachments {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
       }
 
       .chat-avatar {

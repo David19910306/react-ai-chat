@@ -11,6 +11,7 @@ import {
   listConversations,
   type ConversationCursor,
 } from "../services/conversation.service";
+import { getAttachmentDtosByMessageIds } from "../services/file.service";
 
 type ConversationParams = { conversationId: string };
 
@@ -61,7 +62,28 @@ async function getMessagesHandler(req: Request<ConversationParams>, res: Respons
 
   // userId 也传进去：查询自身带上归属条件，不依赖上面那次校验一直记得做
   const messages = await getMessages(conversationId, userId);
-  res.status(200).json({ messages });
+
+  /**
+   * 把附件挂到各自的消息上，供前端渲染历史气泡。
+   *
+   * 用一次批量查询而不是逐条消息查（N+1）：一个会话打开时可能有几十条消息，
+   * 每条一次往返，首屏就会明显卡顿
+   *
+   * 附件本身不随消息删除：删消息只删 message_file 里的绑定，
+   * 所以历史上出现过的文件（被清理任务回收、或被用户手动删掉）在这里自然查不到，
+   * 前端按「没有附件」渲染即可，不会出现指向 404 的空卡片
+   */
+  const attachmentsByMessage = await getAttachmentDtosByMessageIds(
+    messages.map((item) => item.messageId),
+    userId
+  );
+
+  res.status(200).json({
+    messages: messages.map((item) => ({
+      ...item,
+      attachments: attachmentsByMessage.get(item.messageId) ?? [],
+    })),
+  });
 }
 
 /*************  删除会话及消息  ***************/

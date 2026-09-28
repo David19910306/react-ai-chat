@@ -81,6 +81,28 @@ const IMAGE_CONTENT_TYPE: Record<string, string> = {
   png: 'image/png',
 };
 
+/**
+ * 「传了但一直没发出」的附件保留多久后回收（小时）。
+ *
+ * 前端把待发送区和历史文件彻底分开了，上传即入库但只有真正发出去才会被 message_file 引用，
+ * 用户传完就关掉页面的话这条记录和磁盘文件会永远没人认领。
+ *
+ * 取 24 小时而不是更短：这个窗口同时也是「用户今天传了附件、明天回来接着发」的容忍度，
+ * 太短会让人在输入框里挂了一夜的附件凭空消失，且报错是发送时的 404，很难联想到是回收任务干的
+ */
+const ORPHAN_FILE_TTL_HOURS = 24;
+
+// 单个附件提取出的文本上限（字符）。兜住 token 开销，也避免超大文件挤爆上下文窗口
+const MAX_EXTRACT_CHARS = 20_000;
+
+// 一次请求里所有附件文本合计的上限。
+// 单文件上限只管住一个文件，但一轮对话可能挂着多个文档；
+// 对话历史里每条带附件的消息都会重新注入文本，光靠单文件上限兜不住总量
+const MAX_ATTACHMENT_CHARS_PER_REQUEST = 40_000;
+
+// 单条消息最多挂几个附件，与上传时的文件数上限保持一致
+const MAX_ATTACHMENTS = UPLOAD_MAX_FILES;
+
 export {
   JWT_EXPIRES_IN,
   JWT_SECRET,
@@ -90,4 +112,8 @@ export {
   UPLOAD_MAX_FILES,
   UPLOAD_ALLOWED_SUFFIXES,
   IMAGE_CONTENT_TYPE,
+  ORPHAN_FILE_TTL_HOURS,
+  MAX_EXTRACT_CHARS,
+  MAX_ATTACHMENT_CHARS_PER_REQUEST,
+  MAX_ATTACHMENTS,
 };

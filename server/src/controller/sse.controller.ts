@@ -1,4 +1,5 @@
 import { type Request, type Response } from 'express';
+import fs from 'node:fs/promises';
 import OpenAI from 'openai';
 
 import {
@@ -8,10 +9,29 @@ import {
   isOwnConversation,
   type MessageRow,
 } from '../services/conversation.service';
+import {
+  bindFilesToMessage,
+  getAttachmentsByMessageIds,
+  getFilesForOwner,
+  getOrExtractFileText,
+  type FileRow,
+  type MessageAttachment,
+} from '../services/file.service';
+import { extractText } from '../services/fileParse.service';
+import {
+  IMAGE_CONTENT_TYPE,
+  MAX_ATTACHMENTS,
+  MAX_ATTACHMENT_CHARS_PER_REQUEST,
+} from '../config';
 
 // SSE 心跳间隔。模型产出首个 token 前可能长时间无字节，中间的反向代理（nginx / ALB）
 // 会按 idle 超时掐断连接，定期发一个注释帧把连接保活。
 const HEARTBEAT_INTERVAL = 15_000;
+
+// 用户只挂了附件、没打字时，替它生成一句默认提问。
+// 服务端替用户"说话"听起来别扭，但比两种替代方案都好：
+// 存空 content 会让会话标题为空、气泡空白；前端硬编码一句话则把这个规则复制到了两个地方
+const DEFAULT_ATTACHMENT_PROMPT = '请阅读并分析我上传的附件内容。';
 
 /**
  * OpenAI 客户端单例：SDK 内部持有连接池，每次请求 new 一个会导致每次都重新建连 + TLS 握手。
@@ -53,20 +73,139 @@ function toChatMessage(
 }
 
 /**
- * 请求体：{ conversationId?: string, content: string }
+ * 从共享预算里取一段文本。超预算就截断并说明——
+ * 静默丢弃会让模型以为文件是空的，进而编内容
+ */
+function consumeBudget(budget: { remaining: number }, text: string): string {
+  if (budget.remaining <= 0) return '（附件内容过多，本次已省略）';
+  if (text.length <= budget.remaining) {
+    budget.remaining -= text.length;
+    return text;
+  }
+  const kept = text.slice(0, budget.remaining);
+  budget.remaining = 0;
+  return `${kept}\n\n（附件内容过多，本次仅发送了前一部分）`;
+}
+
+/** 读磁盘图片转成 base64 data URL。DeepSeek 这边实测接受 data URL 形式，不必先传到对象存储 */
+async function toImageDataUrl(file: FileRow): Promise<string> {
+  const buffer = await fs.readFile(file.storagePath);
+  const mime = IMAGE_CONTENT_TYPE[file.suffix] ?? 'application/octet-stream';
+  return `data:${mime};base64,${buffer.toString('base64')}`;
+}
+
+/**
+ * 拼当前这一轮的附件内容，输出多模态数组。
+ *
+ * 图片走 image_url 直传（模型能真正看图）；文档走文本提取。
+ * 每个附件单独 try：一个文件读失败不该让整条消息发不出去
+ */
+async function buildCurrentUserContent(
+  text: string,
+  files: FileRow[],
+  budget: { remaining: number }
+): Promise<OpenAI.Chat.Completions.ChatCompletionContentPart[]> {
+  const parts: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [{ type: 'text', text }];
+
+  for (const file of files) {
+    if (IMAGE_CONTENT_TYPE[file.suffix]) {
+      try {
+        parts.push({ type: 'image_url', image_url: { url: await toImageDataUrl(file) } });
+      } catch (error) {
+        console.error(`读取图片失败: ${file.fileName}`, error);
+        parts.push({ type: 'text', text: `【附件：${file.fileName}】读取失败，未能发送。` });
+      }
+      continue;
+    }
+
+    // 走缓存：文档文本解析一次就够，后续轮次直接读 file_text
+    const extracted = await getOrExtractFileText(file, extractText);
+    parts.push({
+      type: 'text',
+      text: `【附件：${file.fileName}】\n${consumeBudget(budget, extracted)}`,
+    });
+  }
+
+  return parts;
+}
+
+/**
+ * 把历史消息的附件正文追加到它原本的文本后面。
+ *
+ * 图片在这里只留一句说明而不重发：历史里的每张图都要重新读盘、重新 base64，
+ * 一轮对话挂着二十条历史就会拼出几十兆的请求体。如实告诉模型"图片没带过来"，
+ * 比让它对着不存在的信息硬答要好——后者就是幻觉的来源
+ */
+function withAttachmentContext(
+  base: string,
+  attachments: MessageAttachment[],
+  budget: { remaining: number }
+): string {
+  const blocks = attachments.map((attachment) => {
+    if (attachment.extractedText === null) {
+      const kind = IMAGE_CONTENT_TYPE[attachment.suffix] ? '图片内容' : '内容';
+      return `【附件：${attachment.fileName}】（${kind}未包含在本次上下文中，如需查看请重新发送该附件）`;
+    }
+    return `【附件：${attachment.fileName}】\n${consumeBudget(budget, attachment.extractedText)}`;
+  });
+
+  // 用户只挂附件没打字时存的是空串，这时不能再拼一个前导换行
+  return base ? `${base}\n\n${blocks.join('\n\n')}` : blocks.join('\n\n');
+}
+
+/**
+ * 请求体：{ conversationId?: string, content: string, fileIds?: string[] }
  * 首轮不带 conversationId，由服务端新建会话并通过 SSE 的 conversation 事件回传会话ID，
  * 后续轮次带上它即可续聊（上下文由服务端从数据库读取拼接，前端不需要维护 messages）
  */
 async function sseHandler(req: Request, res: Response) {
-  const { conversationId: rawConversationId, content } = req.body ?? {};
+  const { conversationId: rawConversationId, content, fileIds: rawFileIds } = req.body ?? {};
   const userId = req.user?.userId;
 
   if (!userId) {
     return res.status(401).json({ message: '未携带认证令牌' });
   }
-  if (typeof content !== 'string' || !content.trim()) {
+
+  // 过掉非字符串项：客户端传个 null / 对象进来不该把后面 where in (?) 的参数搞坏。
+  // 再用 Set 去重：去重不是可选的，下面的归属校验是靠「查回来的条数」判断的，
+  // 同一个 fileId 传两遍时查回来只有一行，条数对不上会被误判成越权而返回 404。
+  // 秒传让这条路径变得很容易走到——同一份文件在待发送区里被选中两次就会重复
+  const fileIds: string[] = Array.from(new Set(
+    Array.isArray(rawFileIds)
+      ? rawFileIds.filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+      : []
+  ));
+  // 先去掉重复再判数量：10 个重复的同一个文件其实只算 1 个附件
+  if (fileIds.length > MAX_ATTACHMENTS) {
+    // 不静默截断：截掉的那几个用户以为发出去了，实际模型看不到，不如直接报错
+    return res.status(400).json({ message: `一次最多携带 ${MAX_ATTACHMENTS} 个附件` });
+  }
+
+  const text = typeof content === 'string' ? content.trim() : '';
+  // 只挂附件不打字是允许的，两者都没有才是空请求
+  if (!text && fileIds.length === 0) {
     return res.status(400).json({ message: 'content 不能为空' });
   }
+
+  /**
+   * 附件归属校验放在建会话之前：越权或文件不存在时直接拒绝，
+   * 否则会先建出一个空会话再报错，侧边栏里多一条永远没有消息的记录
+   *
+   * 用「查回来的条数」而不是逐条校验来判断：数量对不上就说明有 ID 不存在或不属于当前用户，
+   * 两种情况合并成同一个响应，不泄漏"这个 ID 确实存在但不是你的"
+   */
+  let files: FileRow[] = [];
+  if (fileIds.length > 0) {
+    files = await getFilesForOwner(fileIds, userId);
+    if (files.length !== fileIds.length) {
+      return res.status(404).json({ message: '附件不存在或无权访问' });
+    }
+  }
+
+  // 服务端补一句默认提问，见 DEFAULT_ATTACHMENT_PROMPT 处的说明
+  const modelText = text || DEFAULT_ATTACHMENT_PROMPT;
+  // 会话标题单独取素材：文件名叫"图片.png"也比默认提问更有信息量
+  const titleSource = text || files.map((file) => file.fileName).join('、');
 
   // 1、确定会话：带了 conversationId 就校验归属，否则新建
   let conversationId: string;
@@ -76,23 +215,69 @@ async function sseHandler(req: Request, res: Response) {
     }
     conversationId = rawConversationId;
   } else {
-    conversationId = await createConversation(userId, content);
+    conversationId = await createConversation(userId, titleSource);
   }
 
   /**
    * 2、先落库用户消息：上游模型调用失败也不会丢掉用户输入
    * 先将用户输入的消息存储到message表中
+   *
+   * 存的是纯文本，不含附件正文——content 同时用于渲染聊天气泡，
+   * 把提取出的 PDF 正文拼进去会把整篇文档倒进气泡里。附件文本另存在 file_text，
+   * 拼上下文时再按 messageId 取回来
+   *
+   * 存用户实际输入的 text（可能是空串）而不是 modelText：这一列会渲染成聊天气泡，
+   * 替用户补的那句默认提问不该出现在界面上
    */
-  await insertMessage({ conversationId, userId, role: 'user', content });
+  const userMessageId = await insertMessage({
+    conversationId,
+    userId,
+    role: 'user',
+    content: text,
+  });
+
+  /**
+   * 预算对象在整个请求内共享。先给当前轮的附件用，再轮到历史消息：
+   * 当前轮是用户最关心的，历史里那些附件挤掉它才是本末倒置
+   */
+  const budget = { remaining: MAX_ATTACHMENT_CHARS_PER_REQUEST };
+  // 当前轮已经带上的附件，历史注入时跳过，避免同一个文件在一份请求里出现两遍
+  const currentFileIds = new Set(files.map((file) => file.fileId));
+
+  // 先把当前轮的附件内容拼好（含图片转 data URL），占掉预算
+  const currentContent = files.length > 0
+    ? await buildCurrentUserContent(modelText, files, budget)
+    : null;
+
+  // 绑定附件与消息。放在落库之后：绑定要 messageId
+  await bindFilesToMessage(fileIds, userMessageId);
 
   // 3、拼上下文。刚写入的这条用户消息也在其中，所以这里取完直接就是完整对话
   const history = await getRecentMessagesForContext(conversationId, userId);
+  // 一次查出历史消息的附件，避免在循环里逐条查询（N+1）
+  const attachmentsByMessage = await getAttachmentsByMessageIds(
+    history.map((item) => item.messageId),
+    userId
+  );
+
   // 逐角色构造：既满足 SDK 的可辨识联合类型，也能兜住库里出现的意外 role。
   // 认不出来的 role 直接跳过并告警，不猜成 user——猜错会把脏数据伪装成用户发言送进模型，
   // 污染上下文的同时还掩盖了数据问题
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
   for (const item of history) {
-    const message = toChatMessage(item);
+    // 当前这条用户消息已经拼成多模态数组了，直接用，不要再走纯文本分支
+    if (item.messageId === userMessageId && currentContent) {
+      messages.push({ role: 'user', content: currentContent });
+      continue;
+    }
+
+    const attachments = (attachmentsByMessage.get(item.messageId) ?? [])
+      .filter((attachment) => !currentFileIds.has(attachment.fileId));
+    const contentWithAttachments = attachments.length > 0 && item.role === 'user'
+      ? withAttachmentContext(item.content, attachments, budget)
+      : item.content;
+
+    const message = toChatMessage({ role: item.role, content: contentWithAttachments });
     if (message) {
       messages.push(message);
     } else {

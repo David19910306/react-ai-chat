@@ -1,0 +1,25 @@
+邮箱账号：daiyi2@ysstech.com，密码：953736dy2@
+
+git  域名账号：daiyi2@ysstech.com，密码：19910306Dy@  个人token：mkMiEsV72zHXyMMKqcA9
+git账号token登录：PZu1fhCvdC-9YBaWRneF9W86MQp1OmZsCA.01.0y0otr2l9
+
+下载gitlab构建产物的token：6lXS8hi00Vic5GPd0dnsVW86MQp1OmZsCA.01.0y10hsmde
+git  IP账号：daiyi2@ysstech.com，密码：19910306Dy@ http://192.168.1.2:8081/
+
+Y7 git地址：https://gitlab.yssdata.net/
+
+禅道账号：daiyi216138，密码：123456Dy@。https://pm.ysstech.com:8071/index.php?m=user&f=login&referer=Lw_c_c
+
+OA账号：daiyi2，密码：123456dy。https://oa.ysstech.com:5887/shr/dynamic.do?uipk=shr.perself.homepage&inFrame=true&blank=true
+
+SVN账号：daiyi2，密码：Fast2025，地址：http://192.168.1.4:8077/QUARKUI/
+
+稳定服务器：https://nc.yssdata.net:9443/apps/files/?dir=/&fileid=3463304
+
+codeX秘钥：sk-XnjrDsEUXnGXxdMxW8fBw6YS8zrTEYEaXFMilu0iSP3HcwAo
+
+http://192.168.6.215:8988/api/fomp-report-api/doc.html#/default/api%E6%8E%A5%E5%8F%A3%E6%A8%A1%E7%89%88%E5%BC%80%E5%8F%91/execUsingPOST
+
+省直公积金账号密码：
+账号：身份证号
+密码：dyqqmms953736DY@

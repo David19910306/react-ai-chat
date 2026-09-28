@@ -2,7 +2,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import crypto from 'node:crypto';
 import multer from 'multer';
 
-import { UploadFiles, deleteFile, queryFiles, previewFile } from '../controller/fileHandler.controller';
+import { UploadFiles, checkInstantUpload, deleteFile, queryFiles, previewFile } from '../controller/fileHandler.controller';
 import {
   UPLOAD_DIR,
   UPLOAD_ALLOWED_SUFFIXES,
@@ -68,6 +68,9 @@ function handleUploadError(err: unknown, _req: Request, res: Response, next: Nex
 // 用 array('file') 而不是 any()：any 会照单全收任意字段名的文件，
 // 字段名约定坏掉时反而不报错，问题被推迟到更难查的地方
 router.post('/api/file/upload', upload.array('file', UPLOAD_MAX_FILES), handleUploadError, UploadFiles);
+// 秒传探测。走 JSON body 而不是 multipart：这里只有一个指纹，没有文件要传，
+// 用 multipart 反而要先让 multer 把请求体写进临时目录再读出来
+router.post('/api/file/check', checkInstantUpload);
 router.get('/api/file/preview/:fileId', previewFile);
 router.delete('/api/file/delete/:fileId', deleteFile);
 router.get('/api/file/lists', queryFiles);

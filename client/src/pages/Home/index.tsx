@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Popconfirm, App as AntdApp, Upload } from 'antd';
 import {
@@ -12,16 +12,19 @@ import {
   SparklesIcon,
   TrashIcon,
 } from 'lucide-react';
-import { CloseCircleFilled } from '@ant-design/icons';
-import { FaRegFileExcel, FaRegFilePdf, FaRegFileWord } from 'react-icons/fa';
-import { BsFiletypeTxt } from 'react-icons/bs';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { request } from '@/api/request';
-import AuthImage from '@/components/AuthImage';
+import AttachmentCard from '@/components/AttachmentCard';
 import ThemeToggle from '@/components/ThemeToggle';
 import useFetchSSE from '@/hooks/useSSE';
 import { clearToken, getCurrentUser, getToken } from '@/utils/auth';
+import { calcFileMd5 } from '@/utils/file';
+import {
+  checkInstantUploadApi,
+  deleteFileApi,
+  uploadFileApi,
+  type UploadFile,
+} from '@/api/file';
 import {
   deleteConversationApi,
   getConversationMessagesApi,
@@ -36,32 +39,15 @@ type ChatMessage = {
   id: string;
   role: 'user' | 'assistant' | 'system';
   content: string;
+  /** 随消息发出的附件，仅用户消息会有 */
+  attachments?: UploadFile[];
 };
 
-type UploadFile = {
-  id: string;
-  filename: string;
-  /** 文件后缀，小写不含点 */
-  type: string;
-  size: number;
-  md5: string;
-  previewUrl: string;
-}
-
-const imageType = ['png', 'jpg', 'jpeg'];
+// 与后端 config.ts 的 UPLOAD_MAX_FILES 保持一致：超了后端会直接 400，这里先拦一道给出更快的反馈
+const MAX_ATTACHMENTS = 10;
 
 const createId = () =>
   typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : String(Date.now());
-
-// 字节数转可读体积。服务端存的是原始字节，直接显示「1048576」没人看得懂
-const formatFileSize = (bytes: number): string => {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  const size = bytes / 1024 ** index;
-  // 到 KB 以上保留一位小数，字节数则不需要小数
-  return `${index === 0 ? size : size.toFixed(1)} ${units[index]}`;
-};
 
 /**
  * 这两个常量提到模块作用域，不是随手放的位置：
@@ -89,15 +75,6 @@ const MARKDOWN_COMPONENTS: Components = {
   ),
 };
 
-const FILE_TYPE_ICON: Record<string, ReactNode> = {
-  pdf: <FaRegFilePdf color='#258832' size='28' />,
-  txt: <BsFiletypeTxt color='#258832' size='28' />,
-  xls: <FaRegFileExcel color='#258832' size='28' />,
-  xlsx: <FaRegFileExcel color='#258832' size='28' />,
-  docx: <FaRegFileWord color='#258832' size='28' />,
-  doc: <FaRegFileWord color='#258832' size='28' />,
-}
-
 export default function Home() {
   const navigate = useNavigate();
   const { notification } = AntdApp.useApp();
@@ -119,7 +96,12 @@ export default function Home() {
   const [loadingMore, setLoadingMore] = useState(false);
   // 正在删除的会话ID，用于在对应列表项上显示加载态并防止重复点击
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  // 文件上传返回的预览地址
+  // 待发送的附件。
+  //
+  // 这里刻意**不**在挂载时去拉 /file/lists 预填：那个接口返回的是当前用户的全部文件，
+  // 预填的结果是每次打开页面都把历史附件倒进输入框，用户随手一按发送就把旧文件又发了一遍，
+  // 想删掉其中一张卡片还会连带删掉服务端上那份文件。
+  // 待发送区只能由「本次会话新上传或秒传命中的文件」构成，所以初值就是空数组
   const [fileList, setFileList] = useState<UploadFile[]>([]);
 
   // 侧边栏底部展示的登录用户：从 token 解析，刷新页面后依然可用
@@ -182,11 +164,19 @@ export default function Home() {
     }
   };
 
-  const queryFilesList = async () => {
-    const result: { code: number; data: UploadFile[]; message: string } =
-      await request('/file/lists', { method: 'GET' });
-    return result;
-  }
+  /**
+   * 往待发送区追加附件，按 fileId 去重。
+   *
+   * 去重是必要的：秒传让「同一份文件」反复命中同一个 fileId，
+   * 直接 append 会在待发送区堆出多张一模一样的卡片；发出去时 fileIds 里也会带重复值
+   */
+  const appendFiles = useCallback((incoming: UploadFile[]) => {
+    if (incoming.length === 0) return;
+    setFileList((prev) => {
+      const seen = new Set(prev.map((item) => item.id));
+      return [...prev, ...incoming.filter((item) => !seen.has(item.id))];
+    });
+  }, []);
 
   // 未登录跳转登录页，否则加载会话列表
   useEffect(() => {
@@ -216,9 +206,6 @@ export default function Home() {
 
   // 组件卸载时断开 SSE 连接
   useEffect(() => () => disconnect(), [disconnect]);
-  useEffect(() => {
-    queryFilesList().then(response => setFileList(response.data));
-  }, []);
 
   // 退出登录：断开流式连接 → 清除 token → 回登录页
   const onLogout = () => {
@@ -258,6 +245,9 @@ export default function Home() {
         id: item.messageId,
         role: item.role,
         content: item.content,
+        // 服务端一并返回了每条消息的附件，直接挂上即可。
+        // 附件已被删除的消息这里会拿到空数组，气泡按「纯文字」渲染
+        attachments: item.attachments,
       })));
     } catch (error) {
       notifyError('消息加载失败', error);
@@ -293,20 +283,35 @@ export default function Home() {
       return;
     }
     if (loading) return;
+    if (fileList.length > MAX_ATTACHMENTS) {
+      notification.warning({ message: `一次最多携带 ${MAX_ATTACHMENTS} 个附件` });
+      return;
+    }
+
+    // 本次要发出去的附件。先存一份再清空 state：下面的回调里读到的 fileList 已经是空的了
+    const attachments = fileList;
 
     /**
      * 追加用户消息 + 空的助手消息（等待流式填充）
      * 用户消息：userMsg，空助手消息：{ id: createId(), role: 'assistant', content: '' }
+     * 附件挂到用户消息上，这样气泡里能立刻看到发了什么
      */
-    const userMsg: ChatMessage = { id: createId(), role: 'user', content };
+    const userMsg: ChatMessage = { id: createId(), role: 'user', content, attachments };
     setMessages((prev) => [...prev, userMsg, { id: createId(), role: 'assistant', content: '' }]);
     setValue('');
+    // 附件已随本次消息发出，清空待发送区；不清的话下一轮会重复带一遍
+    setFileList([]);
     assistantReplyRef.current = '';
     setLoading(true);
 
-    // 上下文由服务端从数据库读取拼接，这里只发本次内容和会话ID
+    // 上下文由服务端从数据库读取拼接，这里只发本次内容、会话ID和附件ID。
+    // 附件内容（图片转 base64、文档提取文本）全在服务端处理，不经前端中转
     connect(
-      JSON.stringify({ conversationId: conversationId ?? undefined, content }),
+      JSON.stringify({
+        conversationId: conversationId ?? undefined,
+        content,
+        fileIds: attachments.map((file) => file.id),
+      }),
       {
         onEvent: (name, data) => {
           if (name !== 'conversation') return;
@@ -460,7 +465,16 @@ export default function Home() {
                 </div>
               ) : (
                 <div key={message.id} className='chat-row chat-row-user'>
-                  <div className='chat-bubble-user'>{message.content}</div>
+                  {/* 附件排在文字上方：图片是主体内容，先看到更符合预期 */}
+                  {message.attachments && message.attachments.length > 0 && (
+                    <div className='chat-bubble-attachments'>
+                      {message.attachments.map((file) => (
+                        <AttachmentCard key={file.id} file={file} />
+                      ))}
+                    </div>
+                  )}
+                  {/* 只带附件没打字时服务端会补一句默认提问，这里就不重复显示那句话 */}
+                  {message.content && <div className='chat-bubble-user'>{message.content}</div>}
                 </div>
               )
             )}
@@ -474,46 +488,21 @@ export default function Home() {
                 <div className='flex rounded-tl-[14px] rounded-tr-[14px] pt-2 pl-2'>
                   {
                     fileList.map((file: UploadFile) => (
-                        <div key={file.id} className='fileItemPreview'>
-                          <CloseCircleFilled
-                            size={14}
-                            className='removeFileIcon'
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              try {
-                                await request(`/file/delete/${file.id}`, { method: 'DELETE' });
-                                // 直接本地摘掉这一项，不再重新拉全量列表：删的就是刚点的那个，
-                                // 再请求一次既慢，又会把其它历史文件一并灌进待发送区
-                                setFileList((prev) => prev.filter((item) => item.id !== file.id));
-                              } catch (error) {
-                                notifyError('删除失败', error);
-                              }
-                            }}
-                            color='#252525'
-                          />
-                          {
-                            imageType.includes(file.type)? (
-                              <AuthImage
-                                className='rounded-[0.625rem] object-cover'
-                                width='54px'
-                                height='54px'
-                                style={{border: '1px solid #00000012'}}
-                                fileId={file.id}
-                                alt={file.filename}
-                              />
-                            ): (
-                              <div className='flex items-center w-30 h-fit pt-1.5 pb-1.5 pr-2 pl-2 rounded-md bg-[#f5f5f5]'>
-                                {FILE_TYPE_ICON[file.type]}
-                                <div className='flex flex-col justify-center ml-1'>
-                                  <span className='text-[14px] leading-4 w-20 text-ellipsis whitespace-nowrap overflow-hidden'>{file.filename}</span>
-                                  <span className='text-[12px] leading-3.5 text-[#0000004D]'>{file.type} - {formatFileSize(file.size)}</span>
-                                </div>
-                              </div>
-                            )
+                      <AttachmentCard
+                        key={file.id}
+                        file={file}
+                        onRemove={async (fileId) => {
+                          try {
+                            await deleteFileApi(fileId);
+                            // 直接本地摘掉这一项，不再重新拉全量列表：删的就是刚点的那个，
+                            // 再请求一次既慢，又会把其它历史文件一并灌进待发送区
+                            setFileList((prev) => prev.filter((item) => item.id !== fileId));
+                          } catch (error) {
+                            notifyError('删除失败', error);
                           }
-                        </div>
-                      )
-                    )
+                        }}
+                      />
+                    ))
                   }
                 </div>
               ): null
@@ -537,23 +526,42 @@ export default function Home() {
 
             <div className='chat-input-actions'>
               {/* 文件上传 */}
-              <Upload 
+              <Upload
                 className='upload-icon'
                 showUploadList={false}
                 multiple
                 accept='.jpg,.png,.xls,.xlsx,.pdf,.txt,.doc,.docx'
                 customRequest={async (options) => {
                   const { file, onSuccess, onError } = options;
-                  const formData = new FormData();
-                  formData.append("file", file);
+                  // antd 把 file 的类型放宽成 string | Blob | RcFile（历史兼容，允许传 URL），
+                  // 从选择器来的永远是 RcFile。这里显式收窄而不是 as 强转：
+                  // 真出现非 File 的情况，宁可在这一步报错，也不要让一个 string 混进 FormData
+                  if (!(file instanceof File)) {
+                    onError?.(new Error('无法读取所选文件'));
+                    return;
+                  }
                   try {
-                    const result: {message: string, uploadedFiles: UploadFile[]} = await request('/file/upload', {
-                      body: formData,
-                      method: 'POST',
-                    });
-                    setFileList(prev => [...prev, ...(result?.uploadedFiles ?? [])])
-                    // 必须回调，否则 antd 内部这条上传记录会一直停在 uploading 状态不释放
-                    onSuccess?.(result);
+                    /**
+                     * 秒传：先在本地算出文件指纹，问服务端「这份内容我是不是已经传过」。
+                     * 命中就只发了一个 32 字节的 md5，文件本身一个字节都不用传。
+                     *
+                     * 探测失败（网络抖动、服务端异常）不该挡着上传，服务端侧对
+                     * /file/check 的错误也已经收敛成 exists:false，这里再兜一层 try：
+                     * 客户端连 md5 都算不出来（比如读文件被拒）时直接走完整上传
+                     */
+                    const md5 = await calcFileMd5(file).catch(() => '');
+                    if (md5) {
+                      const hit = await checkInstantUploadApi(md5, file.size);
+                      if (hit) {
+                        appendFiles([hit]);
+                        // 必须回调，否则 antd 内部这条上传记录会一直停在 uploading 状态不释放
+                        onSuccess?.(hit);
+                        return;
+                      }
+                    }
+
+                    appendFiles(await uploadFileApi(file));
+                    onSuccess?.(null);
                   } catch (error) {
                     notifyError('上传失败', error)
                     onError?.(error as Error);

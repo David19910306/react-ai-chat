@@ -46,3 +46,32 @@ CREATE TABLE IF NOT EXISTS `file` (
   PRIMARY KEY (`fileId`),
   KEY `idx_file_time` (`fileId`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='文件存储表';
+
+/* 消息与附件的关联 */
+-- 用独立的关联表而不是给 file 表加 messageId 列，原因有二：
+-- 1、schema.sql 的约定是「全部 CREATE TABLE IF NOT EXISTS，可重复执行」，而 MySQL 没有
+--    ADD COLUMN IF NOT EXISTS，加列只能引入迁移逻辑或容忍重复执行报错，破坏这个约定
+-- 2、md5 列的注释提到秒传：同一个物理文件将来可能被多条消息复用，关联表天然支持，
+--    加列则会退化成一对一
+-- 没有建外键，与本库既有表保持一致（约束放在应用层显式处理）
+CREATE TABLE IF NOT EXISTS `message_file` (
+  `messageId`  VARCHAR(32) NOT NULL COMMENT '消息ID',
+  `fileId`     VARCHAR(32) NOT NULL COMMENT '文件ID',
+  `createTime` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  -- 联合主键顺带兜住重复绑定：同一条消息重复挂同一个文件会被主键挡掉
+  PRIMARY KEY (`messageId`, `fileId`),
+  KEY `idx_file` (`fileId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='消息附件关联表';
+
+/* 附件文本提取结果的缓存 */
+-- 为什么不把提取出的文本直接拼进 message.content：
+-- 1、content 同时用于渲染聊天气泡，拼进去会把整篇 PDF 正文倒进气泡里
+-- 2、content 也是后续轮次拼上下文的来源，不缓存的话每轮都要重新解析一遍 PDF
+-- 单独缓存后，解析只发生一次；文件删除时由应用层一并清理
+CREATE TABLE IF NOT EXISTS `file_text` (
+  `fileId`     VARCHAR(32) NOT NULL COMMENT '文件ID',
+  `content`    MEDIUMTEXT NOT NULL COMMENT '提取出的纯文本',
+  `truncated`  TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否因超长被截断',
+  `createTime` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`fileId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='附件文本提取缓存';
